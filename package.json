@@ -1,0 +1,23 @@
+{
+  "name": "annotab",
+  "version": "0.1.1",
+  "description": "Lightweight table (CSV/TSV/text) reviewer with in-browser comments, sticky rows/columns, filters, and auto-exit payloads.",
+  "bin": {
+    "annotab": "./cli.js"
+  },
+  "files": [
+    "cli.js"
+  ],
+  "license": "MIT",
+  "author": "kazuph",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "chardet": "^2.0.0",
+    "iconv-lite": "^0.6.3"
+  }
+}
