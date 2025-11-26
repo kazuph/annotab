@@ -3,11 +3,12 @@
  * Lightweight CSV/Text/Markdown viewer with comment collection server
  *
  * Usage:
- *   annotab <file> [--port 3000] [--encoding utf8|shift_jis|...] [--no-open]
+ *   annotab <file...> [--port 3000] [--encoding utf8|shift_jis|...] [--no-open]
  *
+ * Multiple files can be specified. Each file opens on a separate port.
  * Click cells in the browser to add comments.
- * Close the tab or click "Submit & Exit" to send comments to the server,
- * which outputs them as YAML to stdout and then exits.
+ * Close the tab or click "Submit & Exit" to send comments to the server.
+ * When all files are closed, outputs combined YAML to stdout and exits.
  */
 
 const fs = require('fs');
@@ -22,39 +23,49 @@ const yaml = require('js-yaml');
 // --- CLI arguments ---------------------------------------------------------
 const args = process.argv.slice(2);
 if (!args.length) {
-  console.error('Usage: annotab <file> [--port 3000] [--encoding utf8|shift_jis|...] [--no-open]');
+  console.error('Usage: annotab <file...> [--port 3000] [--encoding utf8|shift_jis|...] [--no-open]');
   process.exit(1);
 }
 
-let csvPath = null;
-let port = 3000;
+const filePaths = [];
+let basePort = 3000;
 let encodingOpt = null;
 let noOpen = false;
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
   if (arg === '--port' && args[i + 1]) {
-    port = Number(args[i + 1]);
+    basePort = Number(args[i + 1]);
     i += 1;
   } else if ((arg === '--encoding' || arg === '-e') && args[i + 1]) {
     encodingOpt = args[i + 1];
     i += 1;
   } else if (arg === '--no-open') {
     noOpen = true;
-  } else if (!csvPath) {
-    csvPath = arg;
+  } else if (!arg.startsWith('-')) {
+    filePaths.push(arg);
   }
 }
 
-if (!csvPath) {
-  console.error('Please specify a file');
+if (!filePaths.length) {
+  console.error('Please specify at least one file');
   process.exit(1);
 }
 
-const resolvedPath = path.resolve(csvPath);
-if (!fs.existsSync(resolvedPath)) {
-  console.error(`File not found: ${resolvedPath}`);
-  process.exit(1);
+// Validate all files exist
+const resolvedPaths = [];
+for (const fp of filePaths) {
+  const resolved = path.resolve(fp);
+  if (!fs.existsSync(resolved)) {
+    console.error(`File not found: ${resolved}`);
+    process.exit(1);
+  }
+  resolvedPaths.push(resolved);
 }
+
+// --- Multi-file state management -------------------------------------------
+const allResults = [];
+let serversRunning = 0;
+let nextPort = basePort;
 
 // --- Simple CSV/TSV parser (RFC4180-style, handles " escaping and newlines) ----
 function parseCsv(text, separator = ',') {
@@ -142,10 +153,10 @@ function decodeBuffer(buf) {
   }
 }
 
-function loadCsv() {
-  const raw = fs.readFileSync(resolvedPath);
+function loadCsv(filePath) {
+  const raw = fs.readFileSync(filePath);
   const csvText = decodeBuffer(raw);
-  const ext = path.extname(resolvedPath).toLowerCase();
+  const ext = path.extname(filePath).toLowerCase();
   const separator = ext === '.tsv' ? '\t' : ',';
   if (!csvText.includes('\n') && !csvText.includes(separator)) {
     // heuristic: if no newline/separators, still treat as single row
@@ -155,47 +166,47 @@ function loadCsv() {
   return {
     rows,
     cols: Math.max(1, maxCols),
-    title: path.basename(resolvedPath)
+    title: path.basename(filePath)
   };
 }
 
-function loadText() {
-  const raw = fs.readFileSync(resolvedPath);
+function loadText(filePath) {
+  const raw = fs.readFileSync(filePath);
   const text = decodeBuffer(raw);
   const lines = text.split(/\r?\n/);
   return {
     rows: lines.map((line) => [line]),
     cols: 1,
-    title: path.basename(resolvedPath),
+    title: path.basename(filePath),
     preview: null
   };
 }
 
-function loadMarkdown() {
-  const raw = fs.readFileSync(resolvedPath);
+function loadMarkdown(filePath) {
+  const raw = fs.readFileSync(filePath);
   const text = decodeBuffer(raw);
   const lines = text.split(/\r?\n/);
   const preview = marked.parse(text, { breaks: true });
   return {
     rows: lines.map((line) => [line]),
     cols: 1,
-    title: path.basename(resolvedPath),
+    title: path.basename(filePath),
     preview
   };
 }
 
-function loadData() {
-  const ext = path.extname(resolvedPath).toLowerCase();
+function loadData(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
   if (ext === '.csv' || ext === '.tsv') {
-    const data = loadCsv();
+    const data = loadCsv(filePath);
     return { ...data, mode: 'csv' };
   }
   if (ext === '.md' || ext === '.markdown') {
-    const data = loadMarkdown();
+    const data = loadMarkdown(filePath);
     return { ...data, mode: 'markdown' };
   }
   // default text
-  const data = loadText();
+  const data = loadText(filePath);
   return { ...data, mode: 'text' };
 }
 
@@ -606,6 +617,54 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       text-align: left;
     }
     .filter-menu button:hover { background: rgba(96,165,250,0.2); }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal-dialog {
+      background: #0b1224;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      width: 90%;
+      max-width: 480px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    .modal-dialog h3 { margin: 0 0 12px; font-size: 18px; color: var(--accent); }
+    .modal-summary { color: #888; font-size: 13px; margin-bottom: 12px; }
+    .modal-dialog label { display: block; font-size: 13px; margin-bottom: 6px; color: #aaa; }
+    .modal-dialog textarea {
+      width: 100%;
+      min-height: 100px;
+      background: #151e30;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 10px;
+      font-size: 14px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    .modal-dialog textarea:focus { outline: none; border-color: var(--accent); }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+    .modal-actions button {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(96,165,250,0.12);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .modal-actions button:hover { background: rgba(96,165,250,0.2); }
+    .modal-actions button.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+    .modal-actions button.primary:hover { background: #7dd3fc; }
     @media (max-width: 840px) {
       header { flex-direction: column; align-items: flex-start; }
       .comment-list { width: calc(100% - 24px); right: 12px; }
@@ -697,6 +756,19 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
   </div>
   <div class="filter-menu" id="row-menu">
     <label class="menu-check"><input type="checkbox" id="freeze-row-check" /> Freeze up to this row</label>
+  </div>
+
+  <div class="modal-overlay" id="submit-modal">
+    <div class="modal-dialog">
+      <h3>Submit Review</h3>
+      <p class="modal-summary" id="modal-summary"></p>
+      <label for="global-comment">Overall comment (optional)</label>
+      <textarea id="global-comment" placeholder="Add a summary or overall feedback..."></textarea>
+      <div class="modal-actions">
+        <button id="modal-cancel">Cancel</button>
+        <button class="primary" id="modal-submit">Submit</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -1395,14 +1467,25 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
 
     // --- Submit & Exit -----------------------------------------------------
     let sent = false;
+    let globalComment = '';
+    const submitModal = document.getElementById('submit-modal');
+    const modalSummary = document.getElementById('modal-summary');
+    const globalCommentInput = document.getElementById('global-comment');
+    const modalCancel = document.getElementById('modal-cancel');
+    const modalSubmit = document.getElementById('modal-submit');
+
     function payload(reason) {
-      return {
+      const data = {
         file: FILE_NAME,
         mode: MODE,
         reason,
         at: new Date().toISOString(),
         comments: Object.values(comments)
       };
+      if (globalComment.trim()) {
+        data.summary = globalComment.trim();
+      }
+      return data;
     }
     function sendAndExit(reason = 'pagehide') {
       if (sent) return;
@@ -1410,9 +1493,35 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       const blob = new Blob([JSON.stringify(payload(reason))], { type: 'application/json' });
       navigator.sendBeacon('/exit', blob);
     }
-    document.getElementById('send-and-exit').addEventListener('click', () => {
+    function showSubmitModal() {
+      const count = Object.keys(comments).length;
+      modalSummary.textContent = count === 0
+        ? 'No comments added yet.'
+        : count === 1 ? '1 comment will be submitted.' : count + ' comments will be submitted.';
+      globalCommentInput.value = globalComment;
+      submitModal.classList.add('visible');
+      globalCommentInput.focus();
+    }
+    function hideSubmitModal() {
+      submitModal.classList.remove('visible');
+    }
+    document.getElementById('send-and-exit').addEventListener('click', showSubmitModal);
+    modalCancel.addEventListener('click', hideSubmitModal);
+    function doSubmit() {
+      globalComment = globalCommentInput.value;
+      hideSubmitModal();
       sendAndExit('button');
       setTimeout(() => window.close(), 200);
+    }
+    modalSubmit.addEventListener('click', doSubmit);
+    globalCommentInput.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        doSubmit();
+      }
+    });
+    submitModal.addEventListener('click', (e) => {
+      if (e.target === submitModal) hideSubmitModal();
     });
     window.addEventListener('pagehide', () => sendAndExit('pagehide'));
     window.addEventListener('beforeunload', () => sendAndExit('beforeunload'));
@@ -1429,21 +1538,12 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
 </html>`;
 }
 
-function buildHtml() {
-  const { rows, cols, title, mode, preview } = loadData();
+function buildHtml(filePath) {
+  const { rows, cols, title, mode, preview } = loadData(filePath);
   return htmlTemplate(rows, cols, title, mode, preview);
 }
 
 // --- HTTP Server -----------------------------------------------------------
-const baseName = path.basename(resolvedPath);
-
-  const sseClients = new Set();
-  let watcher = null;
-  let heartbeat = null;
-  let reloadTimer = null;
-  let server = null;
-  let opened = false;
-
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -1459,176 +1559,252 @@ function readBody(req) {
   });
 }
 
-function broadcast(data) {
-  const payload = typeof data === 'string' ? data : JSON.stringify(data);
-  sseClients.forEach((res) => {
-    try {
-      res.write(`data: ${payload}\n\n`);
-    } catch (err) {
-      // ignore write errors
-    }
-  });
-}
+const MAX_PORT_ATTEMPTS = 100;
+const activeServers = new Map();
 
-function notifyReload() {
-  clearTimeout(reloadTimer);
-  reloadTimer = setTimeout(() => broadcast('reload'), 150);
-}
-
-function startWatcher() {
-  try {
-    watcher = fs.watch(resolvedPath, { persistent: true }, notifyReload);
-  } catch (err) {
-    console.warn('Failed to start file watcher', err);
-  }
-  heartbeat = setInterval(() => broadcast('ping'), 25000);
-}
-
-function shutdown() {
-  if (watcher) {
-    watcher.close();
-    watcher = null;
-  }
-  if (heartbeat) {
-    clearInterval(heartbeat);
-    heartbeat = null;
-  }
-  sseClients.forEach((res) => {
-    try { res.end(); } catch (_) {}
-  });
-  if (server) {
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 500).unref();
+function outputAllResults() {
+  console.log('=== All comments received ===');
+  if (allResults.length === 1) {
+    const yamlOut = yaml.dump(allResults[0], { noRefs: true, lineWidth: 120 });
+    console.log(yamlOut.trim());
   } else {
+    const combined = { files: allResults };
+    const yamlOut = yaml.dump(combined, { noRefs: true, lineWidth: 120 });
+    console.log(yamlOut.trim());
+  }
+}
+
+function checkAllDone() {
+  if (serversRunning === 0) {
+    outputAllResults();
     process.exit(0);
   }
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-
-server = http.createServer(async (req, res) => {
-  if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
-    try {
-      const html = buildHtml();
-      res.writeHead(200, {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
-        Pragma: 'no-cache',
-        Expires: '0'
-      });
-      res.end(html);
-    } catch (err) {
-      console.error('File load error', err);
-      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Failed to load file. Please check the file.');
-    }
-    return;
+function shutdownAll() {
+  for (const ctx of activeServers.values()) {
+    if (ctx.watcher) ctx.watcher.close();
+    if (ctx.heartbeat) clearInterval(ctx.heartbeat);
+    ctx.sseClients.forEach((res) => { try { res.end(); } catch (_) {} });
+    if (ctx.server) ctx.server.close();
   }
+  outputAllResults();
+  setTimeout(() => process.exit(0), 500).unref();
+}
 
-  if (req.method === 'GET' && req.url === '/healthz') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('ok');
-    return;
-  }
+process.on('SIGINT', shutdownAll);
+process.on('SIGTERM', shutdownAll);
 
-  if (req.method === 'POST' && req.url === '/exit') {
-    try {
-      const raw = await readBody(req);
-      let payload = {};
-      if (raw && raw.trim()) {
-        payload = JSON.parse(raw);
-      }
-      const comments = Array.isArray(payload.comments) ? payload.comments : [];
-      console.log('=== Comments received ===');
-      const yamlOut = yaml.dump(payload, { noRefs: true, lineWidth: 120 });
-      console.log(yamlOut.trim());
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end('bye');
-    } catch (err) {
-      console.error('payload parse error', err);
-      res.writeHead(400, { 'Content-Type': 'text/plain' });
-      res.end('bad request');
-    } finally {
-      // Expecting to be sent before client closes, exit immediately
-      shutdown();
-    }
-    return;
-  }
+function createFileServer(filePath) {
+  return new Promise((resolve) => {
+    const baseName = path.basename(filePath);
+    const baseDir = path.dirname(filePath);
 
-  if (req.method === 'GET' && req.url === '/sse') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no'
-    });
-    res.write('retry: 3000\n\n');
-    sseClients.add(res);
-    req.on('close', () => sseClients.delete(res));
-    return;
-  }
-
-  // Static file serving for images and other assets (relative to the input file)
-  if (req.method === 'GET') {
-    const MIME_TYPES = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.svg': 'image/svg+xml',
-      '.ico': 'image/x-icon',
-      '.css': 'text/css',
-      '.js': 'application/javascript',
-      '.json': 'application/json',
-      '.pdf': 'application/pdf',
+    const ctx = {
+      filePath,
+      baseName,
+      baseDir,
+      sseClients: new Set(),
+      watcher: null,
+      heartbeat: null,
+      reloadTimer: null,
+      server: null,
+      opened: false,
+      port: 0
     };
-    try {
-      const urlPath = decodeURIComponent(req.url.split('?')[0]);
-      // Prevent directory traversal
-      if (urlPath.includes('..')) {
-        res.writeHead(403, { 'Content-Type': 'text/plain' });
-        res.end('forbidden');
-        return;
-      }
-      const baseDir = path.dirname(resolvedPath);
-      const filePath = path.join(baseDir, urlPath);
-      // Only serve files within the base directory
-      if (!filePath.startsWith(baseDir)) {
-        res.writeHead(403, { 'Content-Type': 'text/plain' });
-        res.end('forbidden');
-        return;
-      }
-      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-        const ext = path.extname(filePath).toLowerCase();
-        const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-        const content = fs.readFileSync(filePath);
-        res.writeHead(200, { 'Content-Type': contentType });
-        res.end(content);
-        return;
-      }
-    } catch (err) {
-      // fall through to 404
-    }
-  }
 
-  res.writeHead(404, { 'Content-Type': 'text/plain' });
-  res.end('not found');
-});
-
-server.listen(port, () => {
-  console.log(`Viewer started: http://localhost:${port}  (file: ${baseName})`);
-  console.log('Close the browser tab to stop the server.');
-  if (!opened && !noOpen) {
-    const url = `http://localhost:${port}`;
-    const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-    try {
-      spawn(opener, [url], { stdio: 'ignore', detached: true });
-      opened = true;
-    } catch (err) {
-      console.warn('Failed to open browser automatically. Please open this URL manually:', url);
+    function broadcast(data) {
+      const payload = typeof data === 'string' ? data : JSON.stringify(data);
+      ctx.sseClients.forEach((res) => {
+        try { res.write(`data: ${payload}\n\n`); } catch (_) {}
+      });
     }
+
+    function notifyReload() {
+      clearTimeout(ctx.reloadTimer);
+      ctx.reloadTimer = setTimeout(() => broadcast('reload'), 150);
+    }
+
+    function startWatcher() {
+      try {
+        ctx.watcher = fs.watch(filePath, { persistent: true }, notifyReload);
+      } catch (err) {
+        console.warn(`Failed to start file watcher for ${baseName}:`, err);
+      }
+      ctx.heartbeat = setInterval(() => broadcast('ping'), 25000);
+    }
+
+    function shutdownServer(result) {
+      if (ctx.watcher) {
+        ctx.watcher.close();
+        ctx.watcher = null;
+      }
+      if (ctx.heartbeat) {
+        clearInterval(ctx.heartbeat);
+        ctx.heartbeat = null;
+      }
+      ctx.sseClients.forEach((res) => { try { res.end(); } catch (_) {} });
+      if (ctx.server) {
+        ctx.server.close();
+        ctx.server = null;
+      }
+      activeServers.delete(filePath);
+      if (result) allResults.push(result);
+      serversRunning--;
+      console.log(`Server for ${baseName} closed. (${serversRunning} remaining)`);
+      checkAllDone();
+    }
+
+    ctx.server = http.createServer(async (req, res) => {
+      if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
+        try {
+          const html = buildHtml(filePath);
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0'
+          });
+          res.end(html);
+        } catch (err) {
+          console.error('File load error', err);
+          res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('Failed to load file. Please check the file.');
+        }
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/healthz') {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('ok');
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/exit') {
+        try {
+          const raw = await readBody(req);
+          let payload = {};
+          if (raw && raw.trim()) {
+            payload = JSON.parse(raw);
+          }
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.end('bye');
+          shutdownServer(payload);
+        } catch (err) {
+          console.error('payload parse error', err);
+          res.writeHead(400, { 'Content-Type': 'text/plain' });
+          res.end('bad request');
+          shutdownServer(null);
+        }
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/sse') {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no'
+        });
+        res.write('retry: 3000\n\n');
+        ctx.sseClients.add(res);
+        req.on('close', () => ctx.sseClients.delete(res));
+        return;
+      }
+
+      // Static file serving for images and other assets
+      if (req.method === 'GET') {
+        const MIME_TYPES = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.webp': 'image/webp',
+          '.svg': 'image/svg+xml',
+          '.ico': 'image/x-icon',
+          '.css': 'text/css',
+          '.js': 'application/javascript',
+          '.json': 'application/json',
+          '.pdf': 'application/pdf',
+        };
+        try {
+          const urlPath = decodeURIComponent(req.url.split('?')[0]);
+          if (urlPath.includes('..')) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('forbidden');
+            return;
+          }
+          const staticPath = path.join(baseDir, urlPath);
+          if (!staticPath.startsWith(baseDir)) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('forbidden');
+            return;
+          }
+          if (fs.existsSync(staticPath) && fs.statSync(staticPath).isFile()) {
+            const ext = path.extname(staticPath).toLowerCase();
+            const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+            const content = fs.readFileSync(staticPath);
+            res.writeHead(200, { 'Content-Type': contentType });
+            res.end(content);
+            return;
+          }
+        } catch (err) {
+          // fall through to 404
+        }
+      }
+
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+    });
+
+    function tryListen(attemptPort, attempts = 0) {
+      if (attempts >= MAX_PORT_ATTEMPTS) {
+        console.error(`Could not find an available port for ${baseName} after ${MAX_PORT_ATTEMPTS} attempts.`);
+        serversRunning--;
+        checkAllDone();
+        return;
+      }
+
+      ctx.server.once('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          tryListen(attemptPort + 1, attempts + 1);
+        } else {
+          console.error(`Server error for ${baseName}:`, err);
+          serversRunning--;
+          checkAllDone();
+        }
+      });
+
+      ctx.server.listen(attemptPort, () => {
+        ctx.port = attemptPort;
+        nextPort = attemptPort + 1;
+        activeServers.set(filePath, ctx);
+        console.log(`Viewer started: http://localhost:${attemptPort}  (file: ${baseName})`);
+        if (!noOpen) {
+          const url = `http://localhost:${attemptPort}`;
+          const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+          try {
+            spawn(opener, [url], { stdio: 'ignore', detached: true });
+          } catch (err) {
+            console.warn('Failed to open browser automatically. Please open this URL manually:', url);
+          }
+        }
+        startWatcher();
+        resolve(ctx);
+      });
+    }
+
+    tryListen(nextPort);
+  });
+}
+
+// Start all servers
+console.log(`Starting servers for ${resolvedPaths.length} file(s)...`);
+serversRunning = resolvedPaths.length;
+
+(async () => {
+  for (const filePath of resolvedPaths) {
+    await createFileServer(filePath);
   }
-  startWatcher();
-});
+  console.log('Close all browser tabs or Submit & Exit to finish.');
+})();
