@@ -1,6 +1,6 @@
-# annotab (v0.1.1)
+# annotab (v0.2.0)
 
-ブラウザで表データにコメントを付けて回収する軽量ツールです。CSV/TSV/テキストを開けます（Numbers/Excelは今後対応予定）。
+ブラウザで表データ・テキスト・Markdownにコメントを付けて回収する軽量ツールです。CSV/TSV/テキスト/Markdownを開けます（Numbers/Excelは今後対応予定）。出力はデフォルトでYAML。
 
 ## 使い方
 
@@ -17,6 +17,8 @@ npx annotab <file> [--port 3000] [--encoding utf8|shift_jis|...]
 - 列ヘッダクリックで即時フィルタ（空/非空・含む/含まない・解除）
 - 列幅ドラッグ調整・横幅フィット
 - ホットリロード（ファイル更新をwatchしてブラウザにSSE通知）
+- テキスト/Markdown: 行番号でコメント、Markdownは上部プレビュー表示
+- コメント出力: YAML（file/mode/row/col/value/text等）
 
 ## 開発メモ
 - 本体は `cli.js` 単体。

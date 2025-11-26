@@ -8,7 +8,7 @@
  * ブラウザでセルをクリックしてコメントを付ける。
  * タブを閉じる、または「コメント送信して終了」ボタンを押すと
  * navigator.sendBeacon でコメントがサーバーへ送られ、標準出力へ
- * 座標とコメントが出たあとプロセスが終了する。
+ * 座標とコメントが出たあとプロセスが終了する（出力はYAML）。
  */
 
 const fs = require('fs');
@@ -17,6 +17,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const chardet = require('chardet');
 const iconv = require('iconv-lite');
+const marked = require('marked');
+const yaml = require('js-yaml');
 
 // --- CLI引数 ---------------------------------------------------------------
 const args = process.argv.slice(2);
@@ -48,7 +50,7 @@ if (!csvPath) {
 
 const resolvedPath = path.resolve(csvPath);
 if (!fs.existsSync(resolvedPath)) {
-  console.error(`CSVが見つかりません: ${resolvedPath}`);
+  console.error(`ファイルが見つかりません: ${resolvedPath}`);
   process.exit(1);
 }
 
@@ -141,6 +143,9 @@ function decodeBuffer(buf) {
 function loadCsv() {
   const raw = fs.readFileSync(resolvedPath);
   const csvText = decodeBuffer(raw);
+  if (!csvText.includes('\n') && !csvText.includes(',')) {
+    // heuristic: if no newline/commas, still treat as single row
+  }
   const rows = parseCsv(csvText);
   const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
   return {
@@ -150,9 +155,51 @@ function loadCsv() {
   };
 }
 
+function loadText() {
+  const raw = fs.readFileSync(resolvedPath);
+  const text = decodeBuffer(raw);
+  const lines = text.split(/\r?\n/);
+  return {
+    rows: lines.map((line) => [line]),
+    cols: 1,
+    title: path.basename(resolvedPath),
+    preview: null
+  };
+}
+
+function loadMarkdown() {
+  const raw = fs.readFileSync(resolvedPath);
+  const text = decodeBuffer(raw);
+  const lines = text.split(/\r?\n/);
+  const preview = marked.parse(text, { breaks: true });
+  return {
+    rows: lines.map((line) => [line]),
+    cols: 1,
+    title: path.basename(resolvedPath),
+    preview
+  };
+}
+
+function loadData() {
+  const ext = path.extname(resolvedPath).toLowerCase();
+  if (ext === '.csv' || ext === '.tsv') {
+    const data = loadCsv();
+    return { ...data, mode: 'csv' };
+  }
+  if (ext === '.md' || ext === '.markdown') {
+    const data = loadMarkdown();
+    return { ...data, mode: 'markdown' };
+  }
+  // default text
+  const data = loadText();
+  return { ...data, mode: 'text' };
+}
+
 // --- HTMLテンプレート ------------------------------------------------------
-function htmlTemplate(dataRows, cols, title) {
+function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
   const serialized = JSON.stringify(dataRows);
+  const modeJson = JSON.stringify(mode);
+  const hasPreview = !!previewHtml;
   return `<!doctype html>
 <html lang="ja">
 <head>
@@ -478,6 +525,26 @@ function htmlTemplate(dataRows, cols, title) {
       box-shadow: 0 10px 24px rgba(0,0,0,0.35);
       font-size: 13px;
     }
+    .md-preview {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+      overflow: auto;
+      max-height: 280px;
+    }
+    .md-preview h1, .md-preview h2, .md-preview h3, .md-preview h4 {
+      margin: 0.4em 0 0.2em;
+    }
+    .md-preview p { margin: 0.3em 0; line-height: 1.5; }
+    .md-preview code { background: rgba(255,255,255,0.08); padding: 2px 4px; border-radius: 4px; }
+    .md-preview pre {
+      background: rgba(255,255,255,0.06);
+      padding: 8px 10px;
+      border-radius: 8px;
+      overflow: auto;
+    }
     .filter-menu {
       position: absolute;
       background: #0b1224;
@@ -522,6 +589,7 @@ function htmlTemplate(dataRows, cols, title) {
   </header>
 
   <div class="wrap">
+    ${hasPreview ? `<div class="md-preview">${previewHtml}</div>` : ''}
     <div class="toolbar">
       <button id="fit-width">横幅にフィット</button>
       <label>固定列:
@@ -542,7 +610,7 @@ function htmlTemplate(dataRows, cols, title) {
         <thead>
           <tr>
             <th aria-label="row/col corner"></th>
-            ${Array.from({ length: cols }).map((_, i) => `<th data-col="${i + 1}"><div class="th-inner">C${i + 1}<span class="resizer" data-col="${i + 1}"></span></div></th>`).join('')}
+            ${Array.from({ length: cols }).map((_, i) => `<th data-col="${i + 1}"><div class="th-inner">${mode === 'csv' ? `C${i + 1}` : 'Text'}<span class="resizer" data-col="${i + 1}"></span></div></th>`).join('')}
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -583,6 +651,7 @@ function htmlTemplate(dataRows, cols, title) {
     const DATA = ${serialized};
     const MAX_COLS = ${cols};
     const FILE_NAME = ${JSON.stringify(title)};
+    const MODE = ${modeJson};
 
   const tbody = document.getElementById('tbody');
   const table = document.getElementById('csv-table');
@@ -1005,6 +1074,7 @@ function htmlTemplate(dataRows, cols, title) {
     function payload(reason) {
       return {
         file: FILE_NAME,
+        mode: MODE,
         reason,
         at: new Date().toISOString(),
         comments: Object.values(comments)
@@ -1035,8 +1105,8 @@ function htmlTemplate(dataRows, cols, title) {
 }
 
 function buildHtml() {
-  const { rows, cols, title } = loadCsv();
-  return htmlTemplate(rows, cols, title);
+  const { rows, cols, title, mode, preview } = loadData();
+  return htmlTemplate(rows, cols, title, mode, preview);
 }
 
 // --- HTTPサーバー ---------------------------------------------------------
@@ -1140,18 +1210,9 @@ server = http.createServer(async (req, res) => {
         payload = JSON.parse(raw);
       }
       const comments = Array.isArray(payload.comments) ? payload.comments : [];
-      console.log('=== CSVコメントを受信 ===');
-      if (!comments.length) {
-        console.log('(コメントなし)');
-      } else {
-        comments.forEach((c) => {
-          const cell = `row=${c.row}, col=${c.col}`;
-          const value = c.value ? ` value="${c.value}"` : '';
-          console.log(`${cell}${value}: ${c.text}`);
-        });
-      }
-      console.log('--- JSON payload ---');
-      console.log(JSON.stringify(payload, null, 2));
+      console.log('=== コメントを受信 ===');
+      const yamlOut = yaml.dump(payload, { noRefs: true, lineWidth: 120 });
+      console.log(yamlOut.trim());
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('bye');
     } catch (err) {

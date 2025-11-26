@@ -1,7 +1,7 @@
 {
   "name": "annotab",
-  "version": "0.1.1",
-  "description": "Lightweight table (CSV/TSV/text) reviewer with in-browser comments, sticky rows/columns, filters, and auto-exit payloads.",
+  "version": "0.2.0",
+  "description": "Lightweight table/text/markdown reviewer with in-browser comments, sticky rows/columns, filters, auto-exit YAML payloads.",
   "bin": {
     "annotab": "./cli.js"
   },
@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "chardet": "^2.0.0",
-    "iconv-lite": "^0.6.3"
+    "iconv-lite": "^0.6.3",
+    "js-yaml": "^4.1.0",
+    "marked": "^12.0.2"
   }
 }
