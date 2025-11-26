@@ -556,12 +556,15 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     .md-layout {
       display: flex;
       gap: 16px;
-      align-items: flex-start;
+      align-items: stretch;
       margin-top: 8px;
+      height: calc(100vh - 140px);
     }
     .md-left {
       flex: 1;
       min-width: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
     }
     .md-left .md-preview {
       max-height: none;
@@ -569,6 +572,8 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     .md-right {
       flex: 1;
       min-width: 0;
+      overflow-y: auto;
+      overflow-x: auto;
     }
     .md-right .table-box {
       max-width: none;
@@ -1533,6 +1538,46 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     updateFilterIndicators();
     refreshList();
     resetState();
+
+    // --- Scroll Sync for Markdown Mode ---
+    if (MODE === 'markdown') {
+      const mdLeft = document.querySelector('.md-left');
+      const mdRight = document.querySelector('.md-right');
+      if (mdLeft && mdRight) {
+        let activePane = null;
+        let rafId = null;
+
+        function syncScroll(source, target, sourceName) {
+          // Only sync if this pane initiated the scroll
+          if (activePane && activePane !== sourceName) return;
+          activePane = sourceName;
+
+          if (rafId) cancelAnimationFrame(rafId);
+          rafId = requestAnimationFrame(() => {
+            const sourceMax = source.scrollHeight - source.clientHeight;
+            const targetMax = target.scrollHeight - target.clientHeight;
+
+            if (sourceMax <= 0 || targetMax <= 0) return;
+
+            // Snap to edges for precision
+            if (source.scrollTop <= 1) {
+              target.scrollTop = 0;
+            } else if (source.scrollTop >= sourceMax - 1) {
+              target.scrollTop = targetMax;
+            } else {
+              const ratio = source.scrollTop / sourceMax;
+              target.scrollTop = Math.round(ratio * targetMax);
+            }
+
+            // Release lock after scroll settles
+            setTimeout(() => { activePane = null; }, 100);
+          });
+        }
+
+        mdLeft.addEventListener('scroll', () => syncScroll(mdLeft, mdRight, 'left'), { passive: true });
+        mdRight.addEventListener('scroll', () => syncScroll(mdRight, mdLeft, 'right'), { passive: true });
+      }
+    }
   </script>
 </body>
 </html>`;

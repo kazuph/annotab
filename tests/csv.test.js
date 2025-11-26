@@ -31,7 +31,7 @@ function startServer(port) {
 describe('CSV E2E Tests', () => {
   let browser;
   let serverProcess;
-  const port = 3001;
+  const port = 3011;
 
   beforeAll(async () => {
     browser = await chromium.launch({ headless: true });
