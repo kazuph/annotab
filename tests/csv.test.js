@@ -67,7 +67,7 @@ describe('CSV E2E Tests', () => {
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'csv-02-comment-card.png'), fullPage: true });
 
     const textarea = page.locator('#comment-input');
-    await textarea.fill('この商品は人気です');
+    await textarea.fill('This product is popular');
     await page.locator('#save-comment').click();
     await expect(cell).toHaveClass(/has-comment/);
 
@@ -82,7 +82,7 @@ describe('CSV E2E Tests', () => {
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'csv-04-filter-menu.png'), fullPage: true });
 
     page.once('dialog', async dialog => {
-      await dialog.accept('果物');
+      await dialog.accept('Fruit');
     });
     await page.locator('#filter-menu button[data-action="contains"]').click();
     await page.waitForTimeout(500);

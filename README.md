@@ -1,25 +1,67 @@
-# annotab (v0.2.0)
+# annotab
 
-ブラウザで表データ・テキスト・Markdownにコメントを付けて回収する軽量ツールです。CSV/TSV/テキスト/Markdownを開けます（Numbers/Excelは今後対応予定）。出力はデフォルトでYAML。
+A lightweight browser-based tool for reviewing and annotating tabular data, text, and Markdown files. Supports CSV, TSV, plain text, and Markdown. Comments are output as YAML to stdout.
 
-## 使い方
+## Features
+
+- **CSV/TSV support**: View tabular data with column/row freezing and filtering
+- **Markdown support**: Side-by-side preview and source view for easy annotation
+- **Text support**: Line-by-line commenting for plain text files
+- **Real-time**: Hot reload on file changes via SSE
+- **YAML output**: Comments exported with file, mode, row, col, value, and text
+
+## Installation
 
 ```bash
-npx annotab <file> [--port 3000] [--encoding utf8|shift_jis|...]
+npm install -g annotab
 ```
 
-- ブラウザが自動で起動します（macOS: `open` / Linux: `xdg-open` / Windows: `start`）。
-- セルをクリックしてコメント入力。タブを閉じるか「コメント送信して終了」で送信すると、サーバーは標準出力にコメントJSONを出して終了します。
-- 文字コードはUTF-8を前提としますが、`--encoding` で指定、または `chardet` による簡易自動判定で `Shift_JIS` / `CP932` なども開けます。
+Or run directly with npx:
 
-## 機能
-- 列・行の固定（sticky）
-- 列ヘッダクリックで即時フィルタ（空/非空・含む/含まない・解除）
-- 列幅ドラッグ調整・横幅フィット
-- ホットリロード（ファイル更新をwatchしてブラウザにSSE通知）
-- テキスト/Markdown: 行番号でコメント、Markdownは上部プレビュー表示
-- コメント出力: YAML（file/mode/row/col/value/text等）
+```bash
+npx annotab <file>
+```
 
-## 開発メモ
-- 本体は `cli.js` 単体。
-- 今後: Excel/Numbers対応、シート選択オプション、フィルタプリセット拡充など。
+## Usage
+
+```bash
+annotab <file> [--port 3000] [--encoding utf8|shift_jis|...]
+```
+
+- Browser opens automatically (macOS: `open` / Linux: `xdg-open` / Windows: `start`)
+- Click cells to add comments
+- Close the tab or click "Submit & Exit" to output comments as YAML and terminate the server
+- Encoding defaults to UTF-8; use `--encoding` to specify or let `chardet` auto-detect (Shift_JIS, CP932, etc.)
+
+## Screenshots
+
+### CSV View
+
+![CSV View](./assets/screenshot-csv.png)
+
+### Markdown View
+
+![Markdown View](./assets/screenshot-md.png)
+
+## Output Example
+
+```yaml
+file: data.csv
+mode: csv
+reason: button
+at: '2025-11-26T12:00:00.000Z'
+comments:
+  - row: 2
+    col: 3
+    text: This value needs review
+    value: '150'
+```
+
+## Development
+
+- Main source: `cli.cjs`
+- Tests: `npm test` (vitest + playwright)
+
+## License
+
+MIT

@@ -1,22 +1,22 @@
-# サンプルドキュメント
+# Sample Document
 
-## 概要
+## Overview
 
-このドキュメントはannotabのテスト用サンプルです。
+This document is a sample for testing annotab's Markdown support.
 
-## 機能一覧
+## Features
 
-- セルをクリックしてコメント追加
-- 列のフィルタリング
-- 行・列の固定
+- Click cells to add comments
+- Filter columns by value
+- Freeze rows and columns
 
-## コード例
+## Code Example
 
 ```javascript
 const greeting = "Hello, annotab!";
 console.log(greeting);
 ```
 
-## まとめ
+## Summary
 
-テストが正常に完了しました。
+Test completed successfully.

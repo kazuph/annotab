@@ -51,7 +51,7 @@ describe('Markdown E2E Tests', () => {
     await expect(page.locator('header h1')).toContainText('sample.md');
     const preview = page.locator('.md-preview');
     await expect(preview).toBeVisible();
-    await expect(preview.locator('h1')).toContainText('サンプルドキュメント');
+    await expect(preview.locator('h1')).toContainText('Sample Document');
     const table = page.locator('#csv-table');
     await expect(table).toBeVisible();
 
@@ -66,7 +66,7 @@ describe('Markdown E2E Tests', () => {
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'md-02-comment-card.png'), fullPage: true });
 
     const textarea = page.locator('#comment-input');
-    await textarea.fill('タイトルを変更する必要があります');
+    await textarea.fill('Title needs to be updated');
     await page.locator('#save-comment').click();
     await expect(cell).toHaveClass(/has-comment/);
 
@@ -75,7 +75,7 @@ describe('Markdown E2E Tests', () => {
     // 3. Toggle comment list panel
     const cell2 = page.locator('td[data-row="7"][data-col="1"]');
     await cell2.click();
-    await page.locator('#comment-input').fill('機能一覧を更新する');
+    await page.locator('#comment-input').fill('Update feature list');
     await page.locator('#save-comment').click();
 
     const toggleBtn = page.locator('#comment-toggle');
