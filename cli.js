@@ -1115,8 +1115,6 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
         accumTop += tr.offsetHeight;
       });
     }
-    freezeSelect.addEventListener('change', updateStickyOffsets);
-
     // --- 横幅フィット ------------------------------------------------------
     function fitToWidth() {
       const box = document.querySelector('.table-box');
