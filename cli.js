@@ -299,7 +299,7 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     table {
       border-collapse: collapse;
       width: 100%;
-      min-width: max(720px, 100%);
+      min-width: 540px;
       table-layout: fixed;
     }
     thead th {
@@ -536,6 +536,24 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       overflow: auto;
       max-height: 280px;
     }
+    .md-layout {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      margin-top: 8px;
+    }
+    .md-left {
+      flex: 0 0 38%;
+      max-width: 38%;
+    }
+    .md-right {
+      flex: 1;
+      min-width: 0;
+    }
+    .md-right .table-box {
+      max-width: 60vw;
+      min-width: 360px;
+    }
     .md-preview h1, .md-preview h2, .md-preview h3, .md-preview h4 {
       margin: 0.4em 0 0.2em;
     }
@@ -546,6 +564,10 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       padding: 8px 10px;
       border-radius: 8px;
       overflow: auto;
+    }
+    @media (max-width: 960px) {
+      .md-layout { flex-direction: column; }
+      .md-left { max-width: 100%; flex: 0 0 auto; }
     }
     .filter-menu {
       position: absolute;
@@ -591,23 +613,49 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
   </header>
 
   <div class="wrap">
-    ${hasPreview ? `<div class="md-preview">${previewHtml}</div>` : ''}
-    <div class="toolbar">
-      <button id="fit-width">横幅にフィット</button>
-      <span>ヘッダ右端をドラッグして列幅調整</span>
-    </div>
-    <div class="table-box">
-      <table id="csv-table">
-        <colgroup id="colgroup"></colgroup>
-        <thead>
-          <tr>
-            <th aria-label="row/col corner"></th>
-            ${Array.from({ length: cols }).map((_, i) => `<th data-col="${i + 1}"><div class="th-inner">${mode === 'csv' ? `C${i + 1}` : 'Text'}<span class="resizer" data-col="${i + 1}"></span></div></th>`).join('')}
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
+    ${hasPreview && mode === 'markdown'
+      ? `<div class="md-layout">
+          <div class="md-left">
+            <div class="md-preview">${previewHtml}</div>
+          </div>
+          <div class="md-right">
+            <div class="toolbar">
+              <button id="fit-width">横幅にフィット</button>
+              <span>ヘッダ右端をドラッグして列幅調整</span>
+            </div>
+            <div class="table-box">
+              <table id="csv-table">
+                <colgroup id="colgroup"></colgroup>
+                <thead>
+                  <tr>
+                    <th aria-label="row/col corner"></th>
+                    ${Array.from({ length: cols }).map((_, i) => `<th data-col="${i + 1}"><div class="th-inner">${mode === 'csv' ? `C${i + 1}` : 'Text'}<span class="resizer" data-col="${i + 1}"></span></div></th>`).join('')}
+                  </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>`
+      : `
+        ${hasPreview ? `<div class="md-preview">${previewHtml}</div>` : ''}
+        <div class="toolbar">
+          <button id="fit-width">横幅にフィット</button>
+          <span>ヘッダ右端をドラッグして列幅調整</span>
+        </div>
+        <div class="table-box">
+          <table id="csv-table">
+            <colgroup id="colgroup"></colgroup>
+            <thead>
+              <tr>
+                <th aria-label="row/col corner"></th>
+                ${Array.from({ length: cols }).map((_, i) => `<th data-col="${i + 1}"><div class="th-inner">${mode === 'csv' ? `C${i + 1}` : 'Text'}<span class="resizer" data-col="${i + 1}"></span></div></th>`).join('')}
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      `}
   </div>
 
   <div class="floating" id="comment-card">
@@ -667,9 +715,9 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
   const freezeRowCheck = document.getElementById('freeze-row-check');
 
   const ROW_HEADER_WIDTH = 52;
-  const MIN_COL_WIDTH = 80;
-  const MAX_COL_WIDTH = 380;
-  const DEFAULT_COL_WIDTH = 160;
+    const MIN_COL_WIDTH = 80;
+    const MAX_COL_WIDTH = 420;
+    const DEFAULT_COL_WIDTH = 120;
 
   let colWidths = Array.from({ length: MAX_COLS }, () => DEFAULT_COL_WIDTH);
   let panelOpen = false;
@@ -751,6 +799,11 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
         frag.appendChild(tr);
       });
       tbody.appendChild(frag);
+      // テキスト/Markdownは単列なら幅を狭めておく
+      if (MODE !== 'csv' && MAX_COLS === 1) {
+        colWidths[0] = 240;
+        syncColgroup();
+      }
     }
 
     function openCard(td, value) {
