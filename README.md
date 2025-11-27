@@ -5,8 +5,10 @@ A lightweight browser-based tool for reviewing and annotating tabular data, text
 ## Features
 
 - **CSV/TSV support**: View tabular data with column/row freezing and filtering
-- **Markdown support**: Side-by-side preview and source view for easy annotation
+- **Markdown support**: Side-by-side preview with synchronized scrolling
 - **Text support**: Line-by-line commenting for plain text files
+- **Multi-file support**: Open multiple files simultaneously on separate ports
+- **Drag selection**: Select rectangular regions or multiple rows for batch comments
 - **Real-time**: Hot reload on file changes via SSE
 - **YAML output**: Comments exported with file, mode, row, col, value, and text
 
@@ -25,13 +27,18 @@ npx annotab <file>
 ## Usage
 
 ```bash
+# Single file
 annotab <file> [--port 3000] [--encoding utf8|shift_jis|...]
+
+# Multiple files (each opens on consecutive ports)
+annotab file1.csv file2.md file3.tsv --port 3000
 ```
 
 - Browser opens automatically (macOS: `open` / Linux: `xdg-open` / Windows: `start`)
-- Click cells to add comments
+- Click cells to add comments, or drag to select multiple cells/rows
 - Close the tab or click "Submit & Exit" to output comments as YAML and terminate the server
 - Encoding defaults to UTF-8; use `--encoding` to specify or let `chardet` auto-detect (Shift_JIS, CP932, etc.)
+- Use `--no-open` to prevent automatic browser opening
 
 ## Screenshots
 

@@ -1027,15 +1027,28 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       commentInput.value = existingComment?.text || '';
 
       card.style.display = 'block';
-      const anchorTd = tbody.querySelector('td[data-row="' + startRow + '"][data-col="' + startCol + '"]');
-      if (anchorTd) positionCard(anchorTd);
+      positionCardForSelection(startRow, endRow, startCol, endCol);
       commentInput.focus();
     }
 
-    function positionCard(td) {
+    function positionCardForSelection(startRow, endRow, startCol, endCol) {
       const cardWidth = card.offsetWidth || 380;
       const cardHeight = card.offsetHeight || 220;
-      const rect = td.getBoundingClientRect();
+      // Calculate bounding rect for entire selection
+      const topLeftTd = tbody.querySelector('td[data-row="' + startRow + '"][data-col="' + startCol + '"]');
+      const bottomRightTd = tbody.querySelector('td[data-row="' + endRow + '"][data-col="' + endCol + '"]');
+      if (!topLeftTd) return;
+
+      const topLeftRect = topLeftTd.getBoundingClientRect();
+      const bottomRightRect = bottomRightTd ? bottomRightTd.getBoundingClientRect() : topLeftRect;
+
+      // Combined bounding rect for the selection
+      const rect = {
+        left: topLeftRect.left,
+        top: topLeftRect.top,
+        right: bottomRightRect.right,
+        bottom: bottomRightRect.bottom
+      };
       const margin = 12;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
@@ -1043,28 +1056,36 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       const sy = window.scrollY;
 
       const spaceRight = vw - rect.right - margin;
-      const spaceLeft = rect.left - margin;
+      const spaceLeft = rect.left - margin - ROW_HEADER_WIDTH; // Account for row header
       const spaceBelow = vh - rect.bottom - margin;
       const spaceAbove = rect.top - margin;
+
+      // Minimum left position to avoid covering row header
+      const minLeft = ROW_HEADER_WIDTH + margin;
 
       let left = sx + rect.right + margin;
       let top = sy + rect.top;
 
-      if (spaceBelow >= cardHeight) {
-        left = sx + clamp(rect.left, margin, vw - cardWidth - margin);
-        top = sy + rect.bottom + margin;
-      } else if (spaceAbove >= cardHeight) {
-        left = sx + clamp(rect.left, margin, vw - cardWidth - margin);
-        top = sy + rect.top - cardHeight - margin;
-      } else if (spaceRight >= cardWidth) {
+      // Priority: right > below > above > left > fallback right
+      if (spaceRight >= cardWidth) {
+        // Prefer right side of selection
         left = sx + rect.right + margin;
         top = sy + clamp(rect.top, margin, vh - cardHeight - margin);
+      } else if (spaceBelow >= cardHeight) {
+        left = sx + clamp(rect.left, minLeft, vw - cardWidth - margin);
+        top = sy + rect.bottom + margin;
+      } else if (spaceAbove >= cardHeight) {
+        left = sx + clamp(rect.left, minLeft, vw - cardWidth - margin);
+        top = sy + rect.top - cardHeight - margin;
       } else if (spaceLeft >= cardWidth) {
         left = sx + rect.left - cardWidth - margin;
         top = sy + clamp(rect.top, margin, vh - cardHeight - margin);
       } else {
-        left = sx + clamp(rect.left, margin, vw - cardWidth - margin);
-        top = sy + clamp(rect.bottom + margin, margin, vh - cardHeight - margin);
+        // Fallback: place to right side even if it means going off screen
+        // Position card at right edge of selection, clamped to viewport
+        left = sx + Math.max(rect.right + margin, minLeft);
+        left = Math.min(left, sx + vw - cardWidth - margin);
+        top = sy + clamp(rect.top, margin, vh - cardHeight - margin);
       }
 
       card.style.left = left + 'px';
