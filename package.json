@@ -1,10 +1,10 @@
 {
-  "name": "annotab",
+  "name": "reviw",
   "version": "0.6.0",
-  "description": "Lightweight table/text/markdown reviewer with in-browser comments, sticky rows/columns, filters, auto-exit YAML payloads.",
+  "description": "Lightweight file reviewer with in-browser comments for CSV, TSV, Markdown, and Git diffs.",
   "type": "module",
   "bin": {
-    "annotab": "./cli.cjs"
+    "reviw": "./cli.cjs"
   },
   "files": [
     "cli.cjs"

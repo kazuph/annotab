@@ -1,4 +1,4 @@
-# annotab
+# reviw
 
 A lightweight browser-based tool for reviewing and annotating tabular data, text, and Markdown files. Supports CSV, TSV, plain text, and Markdown. Comments are output as YAML to stdout.
 
@@ -15,23 +15,23 @@ A lightweight browser-based tool for reviewing and annotating tabular data, text
 ## Installation
 
 ```bash
-npm install -g annotab
+npm install -g reviw
 ```
 
 Or run directly with npx:
 
 ```bash
-npx annotab <file>
+npx reviw <file>
 ```
 
 ## Usage
 
 ```bash
 # Single file
-annotab <file> [--port 3000] [--encoding utf8|shift_jis|...]
+reviw <file> [--port 3000] [--encoding utf8|shift_jis|...]
 
 # Multiple files (each opens on consecutive ports)
-annotab file1.csv file2.md file3.tsv --port 3000
+reviw file1.csv file2.md file3.tsv --port 3000
 ```
 
 - Browser opens automatically (macOS: `open` / Linux: `xdg-open` / Windows: `start`)

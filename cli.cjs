@@ -3,7 +3,7 @@
  * Lightweight CSV/Text/Markdown viewer with comment collection server
  *
  * Usage:
- *   annotab <file...> [--port 3000] [--encoding utf8|shift_jis|...] [--no-open]
+ *   reviw <file...> [--port 3000] [--encoding utf8|shift_jis|...] [--no-open]
  *
  * Multiple files can be specified. Each file opens on a separate port.
  * Click cells in the browser to add comments.
@@ -42,9 +42,9 @@ for (let i = 0; i < args.length; i += 1) {
   } else if (arg === '--no-open') {
     noOpen = true;
   } else if (arg === '--help' || arg === '-h') {
-    console.log(`Usage: annotab <file...> [options]
-       git diff | annotab [options]
-       annotab [options]  (auto runs git diff HEAD)
+    console.log(`Usage: reviw <file...> [options]
+       git diff | reviw [options]
+       reviw [options]  (auto runs git diff HEAD)
 
 Options:
   --port <number>     Server port (default: 3000)
@@ -53,11 +53,11 @@ Options:
   --help, -h          Show this help message
 
 Examples:
-  annotab data.csv                    # View CSV file
-  annotab README.md                   # View Markdown file
-  git diff | annotab                  # Review diff from stdin
-  git diff HEAD~3 | annotab           # Review diff from last 3 commits
-  annotab                             # Auto run git diff HEAD`);
+  reviw data.csv                    # View CSV file
+  reviw README.md                   # View Markdown file
+  git diff | reviw                  # Review diff from stdin
+  git diff HEAD~3 | reviw           # Review diff from last 3 commits
+  reviw                             # Auto run git diff HEAD`);
     process.exit(0);
   } else if (!arg.startsWith('-')) {
     filePaths.push(arg);
@@ -458,7 +458,7 @@ function diffHtmlTemplate(diffData) {
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>${title} | annotab</title>
+  <title>${title} | reviw</title>
   <style>
     :root {
       color-scheme: dark;
@@ -883,11 +883,11 @@ function diffHtmlTemplate(diffData) {
       const toggle = document.getElementById('theme-toggle');
       const icon = document.getElementById('theme-icon');
       function getSystem() { return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; }
-      function getStored() { return localStorage.getItem('annotab-theme'); }
+      function getStored() { return localStorage.getItem('reviw-theme'); }
       function set(t) {
         if (t === 'light') { document.documentElement.setAttribute('data-theme', 'light'); icon.textContent = '☀️'; }
         else { document.documentElement.removeAttribute('data-theme'); icon.textContent = '🌙'; }
-        localStorage.setItem('annotab-theme', t);
+        localStorage.setItem('reviw-theme', t);
       }
       set(getStored() || getSystem());
       toggle.addEventListener('click', () => {
@@ -929,7 +929,7 @@ function diffHtmlTemplate(diffData) {
     }
 
     // localStorage
-    const STORAGE_KEY = 'annotab:comments:' + FILE_NAME;
+    const STORAGE_KEY = 'reviw:comments:' + FILE_NAME;
     const STORAGE_TTL = 3 * 60 * 60 * 1000;
     function saveToStorage() {
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ comments: { ...comments }, timestamp: Date.now() })); } catch (_) {}
@@ -1315,7 +1315,7 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>${title} | annotab</title>
+  <title>${title} | reviw</title>
   <style>
     /* Dark theme (default) */
     :root {
@@ -1974,7 +1974,7 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     }
 
     function getStoredTheme() {
-      return localStorage.getItem('annotab-theme');
+      return localStorage.getItem('reviw-theme');
     }
 
     function setTheme(theme) {
@@ -1985,7 +1985,7 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
         document.documentElement.removeAttribute('data-theme');
         themeIcon.textContent = '🌙';
       }
-      localStorage.setItem('annotab-theme', theme);
+      localStorage.setItem('reviw-theme', theme);
     }
 
     function toggleTheme() {
@@ -2080,7 +2080,7 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     let selection = null; // {startRow, endRow, startCol, endCol}
 
     // --- localStorage Comment Persistence ---
-    const STORAGE_KEY = 'annotab:comments:' + FILE_NAME;
+    const STORAGE_KEY = 'reviw:comments:' + FILE_NAME;
     const STORAGE_TTL = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 
     function saveCommentsToStorage() {
@@ -3377,9 +3377,9 @@ function createDiffServer(diffContent) {
       if (gitDiff.trim() === '') {
         console.log('No changes detected (working tree clean).');
         console.log('');
-        console.log('Usage: annotab <file...> [options]');
-        console.log('       git diff | annotab [options]');
-        console.log('       annotab  (auto runs git diff HEAD)');
+        console.log('Usage: reviw <file...> [options]');
+        console.log('       git diff | reviw [options]');
+        console.log('       reviw  (auto runs git diff HEAD)');
         process.exit(0);
       }
       diffMode = true;
@@ -3391,8 +3391,8 @@ function createDiffServer(diffContent) {
     } catch (err) {
       console.error(err.message);
       console.log('');
-      console.log('Usage: annotab <file...> [options]');
-      console.log('       git diff | annotab [options]');
+      console.log('Usage: reviw <file...> [options]');
+      console.log('       git diff | reviw [options]');
       process.exit(1);
     }
   }
