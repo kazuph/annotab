@@ -1842,7 +1842,89 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       header { flex-direction: column; align-items: flex-start; }
       .comment-list { width: calc(100% - 24px); right: 12px; }
     }
+    /* Mermaid diagram styles */
+    .mermaid-container {
+      position: relative;
+      margin: 16px 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow: hidden;
+    }
+    .mermaid-container .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+    .mermaid-container .mermaid svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .mermaid-fullscreen-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--selected-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 12px;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .mermaid-fullscreen-btn:hover { background: var(--hover-bg); }
+    /* Fullscreen overlay */
+    .fullscreen-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+    }
+    .fullscreen-overlay.visible { display: flex; }
+    .fullscreen-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: var(--panel-alpha);
+      border-bottom: 1px solid var(--border);
+    }
+    .fullscreen-header h3 { margin: 0; font-size: 14px; }
+    .fullscreen-controls { display: flex; gap: 8px; align-items: center; }
+    .fullscreen-controls button {
+      background: var(--selected-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .fullscreen-controls button:hover { background: var(--hover-bg); }
+    .fullscreen-controls .zoom-info { font-size: 12px; color: var(--muted); min-width: 50px; text-align: center; }
+    .fullscreen-content {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      cursor: grab;
+    }
+    .fullscreen-content:active { cursor: grabbing; }
+    .fullscreen-content .mermaid-wrapper {
+      position: absolute;
+      transform-origin: 0 0;
+      padding: 40px;
+    }
+    .fullscreen-content .mermaid svg {
+      display: block;
+    }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
   <header>
@@ -1955,6 +2037,22 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
         <button id="modal-cancel">Cancel</button>
         <button class="primary" id="modal-submit">Submit</button>
       </div>
+    </div>
+  </div>
+
+  <div class="fullscreen-overlay" id="mermaid-fullscreen">
+    <div class="fullscreen-header">
+      <h3>Mermaid Diagram</h3>
+      <div class="fullscreen-controls">
+        <button id="fs-zoom-out">−</button>
+        <span class="zoom-info" id="fs-zoom-info">100%</span>
+        <button id="fs-zoom-in">+</button>
+        <button id="fs-reset">Reset</button>
+        <button id="fs-close">Close (ESC)</button>
+      </div>
+    </div>
+    <div class="fullscreen-content" id="fs-content">
+      <div class="mermaid-wrapper" id="fs-wrapper"></div>
     </div>
   </div>
 
@@ -2932,6 +3030,133 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
         mdRight.addEventListener('scroll', () => syncScroll(mdRight, mdLeft, 'right'), { passive: true });
       }
     }
+
+    // --- Mermaid Initialization ---
+    (function initMermaid() {
+      if (typeof mermaid === 'undefined') return;
+
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
+        securityLevel: 'loose'
+      });
+
+      // Find all mermaid code blocks in preview
+      const preview = document.querySelector('.md-preview');
+      if (!preview) return;
+
+      const codeBlocks = preview.querySelectorAll('pre code.language-mermaid, pre code');
+      codeBlocks.forEach((code, idx) => {
+        const pre = code.parentElement;
+        const text = code.textContent.trim();
+
+        // Check if it's mermaid content
+        if (!code.classList.contains('language-mermaid') && !text.match(/^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline)/)) {
+          return;
+        }
+
+        // Create container
+        const container = document.createElement('div');
+        container.className = 'mermaid-container';
+
+        const mermaidDiv = document.createElement('div');
+        mermaidDiv.className = 'mermaid';
+        mermaidDiv.id = 'mermaid-' + idx;
+        mermaidDiv.textContent = text;
+
+        const fsBtn = document.createElement('button');
+        fsBtn.className = 'mermaid-fullscreen-btn';
+        fsBtn.innerHTML = '⛶ Fullscreen';
+        fsBtn.addEventListener('click', () => openFullscreen(mermaidDiv));
+
+        container.appendChild(fsBtn);
+        container.appendChild(mermaidDiv);
+        pre.replaceWith(container);
+      });
+
+      // Render all mermaid diagrams
+      mermaid.run();
+
+      // Fullscreen functionality
+      const fsOverlay = document.getElementById('mermaid-fullscreen');
+      const fsWrapper = document.getElementById('fs-wrapper');
+      const fsContent = document.getElementById('fs-content');
+      const fsZoomInfo = document.getElementById('fs-zoom-info');
+      let currentZoom = 1;
+      let panX = 0, panY = 0;
+      let isPanning = false;
+      let startX, startY;
+
+      function openFullscreen(mermaidEl) {
+        const svg = mermaidEl.querySelector('svg');
+        if (!svg) return;
+        fsWrapper.innerHTML = '';
+        fsWrapper.appendChild(svg.cloneNode(true));
+        currentZoom = 1;
+        panX = 40;
+        panY = 40;
+        updateTransform();
+        fsOverlay.classList.add('visible');
+      }
+
+      function closeFullscreen() {
+        fsOverlay.classList.remove('visible');
+      }
+
+      function updateTransform() {
+        fsWrapper.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + currentZoom + ')';
+        fsZoomInfo.textContent = Math.round(currentZoom * 100) + '%';
+      }
+
+      function zoom(delta) {
+        currentZoom = Math.max(0.1, Math.min(5, currentZoom + delta));
+        updateTransform();
+      }
+
+      document.getElementById('fs-zoom-in').addEventListener('click', () => zoom(0.25));
+      document.getElementById('fs-zoom-out').addEventListener('click', () => zoom(-0.25));
+      document.getElementById('fs-reset').addEventListener('click', () => {
+        currentZoom = 1;
+        panX = 40;
+        panY = 40;
+        updateTransform();
+      });
+      document.getElementById('fs-close').addEventListener('click', closeFullscreen);
+
+      // Pan with mouse drag
+      fsContent.addEventListener('mousedown', (e) => {
+        isPanning = true;
+        startX = e.clientX - panX;
+        startY = e.clientY - panY;
+        fsContent.style.cursor = 'grabbing';
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        panX = e.clientX - startX;
+        panY = e.clientY - startY;
+        updateTransform();
+      });
+
+      document.addEventListener('mouseup', () => {
+        isPanning = false;
+        fsContent.style.cursor = 'grab';
+      });
+
+      // Zoom with mouse wheel
+      fsContent.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        zoom(delta);
+      }, { passive: false });
+
+      // ESC to close
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && fsOverlay.classList.contains('visible')) {
+          closeFullscreen();
+        }
+      });
+    })();
   </script>
 </body>
 </html>`;
