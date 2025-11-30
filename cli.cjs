@@ -1923,6 +1923,58 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     .fullscreen-content .mermaid svg {
       display: block;
     }
+    /* Minimap */
+    .minimap {
+      position: absolute;
+      top: 70px;
+      right: 20px;
+      width: 200px;
+      height: 150px;
+      background: var(--panel-alpha);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .minimap-content {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+    }
+    .minimap-content svg {
+      max-width: 100%;
+      max-height: 100%;
+      opacity: 0.6;
+    }
+    .minimap-viewport {
+      position: absolute;
+      border: 2px solid var(--accent);
+      background: rgba(102, 126, 234, 0.2);
+      pointer-events: none;
+      border-radius: 2px;
+    }
+    /* Error toast */
+    .mermaid-error-toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #dc3545;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 13px;
+      max-width: 80%;
+      z-index: 2000;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    .mermaid-error-toast.visible { display: block; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -2054,7 +2106,12 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     <div class="fullscreen-content" id="fs-content">
       <div class="mermaid-wrapper" id="fs-wrapper"></div>
     </div>
+    <div class="minimap" id="fs-minimap">
+      <div class="minimap-content" id="fs-minimap-content"></div>
+      <div class="minimap-viewport" id="fs-minimap-viewport"></div>
+    </div>
   </div>
+  <div class="mermaid-error-toast" id="mermaid-error-toast"></div>
 
   <script>
     const DATA = ${serialized};
@@ -3035,10 +3092,22 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     (function initMermaid() {
       if (typeof mermaid === 'undefined') return;
 
+      const errorToast = document.getElementById('mermaid-error-toast');
+      let errorTimeout;
+
+      function showError(msg) {
+        errorToast.textContent = msg;
+        errorToast.classList.add('visible');
+        console.error('[Mermaid Error]', msg);
+        clearTimeout(errorTimeout);
+        errorTimeout = setTimeout(() => errorToast.classList.remove('visible'), 8000);
+      }
+
       mermaid.initialize({
         startOnLoad: false,
         theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
-        securityLevel: 'loose'
+        securityLevel: 'loose',
+        logLevel: 'error'
       });
 
       // Find all mermaid code blocks in preview
@@ -3058,43 +3127,104 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
         // Create container
         const container = document.createElement('div');
         container.className = 'mermaid-container';
+        container.style.cursor = 'pointer';
+        container.title = 'Click to view fullscreen';
 
         const mermaidDiv = document.createElement('div');
         mermaidDiv.className = 'mermaid';
         mermaidDiv.id = 'mermaid-' + idx;
         mermaidDiv.textContent = text;
 
-        const fsBtn = document.createElement('button');
-        fsBtn.className = 'mermaid-fullscreen-btn';
-        fsBtn.innerHTML = '⛶ Fullscreen';
-        fsBtn.addEventListener('click', () => openFullscreen(mermaidDiv));
+        // Click anywhere on container to open fullscreen
+        container.addEventListener('click', () => openFullscreen(mermaidDiv));
 
-        container.appendChild(fsBtn);
         container.appendChild(mermaidDiv);
         pre.replaceWith(container);
       });
 
-      // Render all mermaid diagrams
-      mermaid.run();
+      // Render all mermaid diagrams with error handling
+      mermaid.run().catch(err => {
+        showError('Mermaid Syntax Error: ' + (err.message || err));
+      });
+
+      // Watch for render errors in DOM
+      setTimeout(() => {
+        document.querySelectorAll('.mermaid').forEach(el => {
+          if (el.querySelector('.error-text, .error-icon')) {
+            const errText = el.textContent;
+            showError('Mermaid Parse Error: ' + errText.slice(0, 200));
+          }
+        });
+      }, 500);
 
       // Fullscreen functionality
       const fsOverlay = document.getElementById('mermaid-fullscreen');
       const fsWrapper = document.getElementById('fs-wrapper');
       const fsContent = document.getElementById('fs-content');
       const fsZoomInfo = document.getElementById('fs-zoom-info');
+      const minimapContent = document.getElementById('fs-minimap-content');
+      const minimapViewport = document.getElementById('fs-minimap-viewport');
       let currentZoom = 1;
+      let initialZoom = 1;
       let panX = 0, panY = 0;
       let isPanning = false;
       let startX, startY;
+      let svgNaturalWidth = 0, svgNaturalHeight = 0;
+      let minimapScale = 1;
 
       function openFullscreen(mermaidEl) {
         const svg = mermaidEl.querySelector('svg');
         if (!svg) return;
         fsWrapper.innerHTML = '';
-        fsWrapper.appendChild(svg.cloneNode(true));
-        currentZoom = 1;
-        panX = 40;
-        panY = 40;
+        const clonedSvg = svg.cloneNode(true);
+        fsWrapper.appendChild(clonedSvg);
+
+        // Setup minimap
+        minimapContent.innerHTML = '';
+        const minimapSvg = svg.cloneNode(true);
+        minimapContent.appendChild(minimapSvg);
+
+        // Get SVG's intrinsic/natural size from viewBox or attributes
+        const viewBox = svg.getAttribute('viewBox');
+        let naturalWidth, naturalHeight;
+
+        if (viewBox) {
+          const parts = viewBox.split(/[\\s,]+/);
+          naturalWidth = parseFloat(parts[2]) || 800;
+          naturalHeight = parseFloat(parts[3]) || 600;
+        } else {
+          naturalWidth = parseFloat(svg.getAttribute('width')) || svg.getBoundingClientRect().width || 800;
+          naturalHeight = parseFloat(svg.getAttribute('height')) || svg.getBoundingClientRect().height || 600;
+        }
+
+        svgNaturalWidth = naturalWidth;
+        svgNaturalHeight = naturalHeight;
+
+        // Calculate minimap scale
+        const minimapMaxWidth = 184; // 200 - 16 padding
+        const minimapMaxHeight = 134; // 150 - 16 padding
+        minimapScale = Math.min(minimapMaxWidth / naturalWidth, minimapMaxHeight / naturalHeight);
+
+        clonedSvg.style.width = naturalWidth + 'px';
+        clonedSvg.style.height = naturalHeight + 'px';
+
+        // Calculate fit-to-viewport zoom
+        const viewportHeight = window.innerHeight - 80;
+        const viewportWidth = window.innerWidth - 40;
+
+        const zoomForHeight = viewportHeight / naturalHeight;
+        const zoomForWidth = viewportWidth / naturalWidth;
+        const fitZoom = Math.min(zoomForHeight, zoomForWidth);
+
+        currentZoom = fitZoom;
+        initialZoom = fitZoom;
+
+        // Center the SVG in viewport
+        const scaledWidth = naturalWidth * currentZoom;
+        const scaledHeight = naturalHeight * currentZoom;
+        panX = (viewportWidth - scaledWidth) / 2 + 20;
+        panY = (viewportHeight - scaledHeight) / 2 + 60;
+
         updateTransform();
         fsOverlay.classList.add('visible');
       }
@@ -3106,19 +3236,82 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       function updateTransform() {
         fsWrapper.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + currentZoom + ')';
         fsZoomInfo.textContent = Math.round(currentZoom * 100) + '%';
+        updateMinimap();
       }
 
-      function zoom(delta) {
-        currentZoom = Math.max(0.1, Math.min(5, currentZoom + delta));
+      function updateMinimap() {
+        if (!svgNaturalWidth || !svgNaturalHeight) return;
+
+        const viewportWidth = window.innerWidth - 40;
+        const viewportHeight = window.innerHeight - 80;
+
+        // Minimap dimensions
+        const mmWidth = 184;
+        const mmHeight = 134;
+        const mmPadding = 8;
+
+        // SVG size in minimap (centered)
+        const mmSvgWidth = svgNaturalWidth * minimapScale;
+        const mmSvgHeight = svgNaturalHeight * minimapScale;
+        const mmSvgLeft = (mmWidth - mmSvgWidth) / 2 + mmPadding;
+        const mmSvgTop = (mmHeight - mmSvgHeight) / 2 + mmPadding;
+
+        // Calculate visible area in SVG coordinates (accounting for transform origin at 0,0)
+        // panX/panY are the translation values, currentZoom is the scale
+        // The visible area starts at -panX/currentZoom in SVG coordinates
+        const visibleLeft = Math.max(0, -panX / currentZoom);
+        const visibleTop = Math.max(0, (-panY + 60) / currentZoom);
+        const visibleWidth = viewportWidth / currentZoom;
+        const visibleHeight = viewportHeight / currentZoom;
+
+        // Clamp to SVG bounds
+        const clampedLeft = Math.min(visibleLeft, svgNaturalWidth);
+        const clampedTop = Math.min(visibleTop, svgNaturalHeight);
+
+        // Position viewport indicator in minimap coordinates
+        const vpLeft = mmSvgLeft + clampedLeft * minimapScale;
+        const vpTop = mmSvgTop + clampedTop * minimapScale;
+        const vpWidth = Math.min(mmWidth - vpLeft + mmPadding, visibleWidth * minimapScale);
+        const vpHeight = Math.min(mmHeight - vpTop + mmPadding, visibleHeight * minimapScale);
+
+        minimapViewport.style.left = vpLeft + 'px';
+        minimapViewport.style.top = vpTop + 'px';
+        minimapViewport.style.width = Math.max(20, vpWidth) + 'px';
+        minimapViewport.style.height = Math.max(15, vpHeight) + 'px';
+      }
+
+      // Use multiplicative zoom for consistent behavior
+      function zoomAt(factor, clientX, clientY) {
+        const oldZoom = currentZoom;
+        currentZoom = Math.max(0.1, Math.min(10, currentZoom * factor));
+
+        // Zoom around mouse position
+        const fsRect = fsContent.getBoundingClientRect();
+        const mouseX = clientX - fsRect.left;
+        const mouseY = clientY - fsRect.top;
+
+        const zoomRatio = currentZoom / oldZoom;
+        panX = mouseX - (mouseX - panX) * zoomRatio;
+        panY = mouseY - (mouseY - panY) * zoomRatio;
+
         updateTransform();
       }
 
-      document.getElementById('fs-zoom-in').addEventListener('click', () => zoom(0.25));
-      document.getElementById('fs-zoom-out').addEventListener('click', () => zoom(-0.25));
+      function zoom(factor) {
+        const fsRect = fsContent.getBoundingClientRect();
+        zoomAt(factor, fsRect.left + fsRect.width / 2, fsRect.top + fsRect.height / 2);
+      }
+
+      document.getElementById('fs-zoom-in').addEventListener('click', () => zoom(1.25));
+      document.getElementById('fs-zoom-out').addEventListener('click', () => zoom(0.8));
       document.getElementById('fs-reset').addEventListener('click', () => {
-        currentZoom = 1;
-        panX = 40;
-        panY = 40;
+        currentZoom = initialZoom;
+        const viewportHeight = window.innerHeight - 80;
+        const viewportWidth = window.innerWidth - 40;
+        const scaledWidth = svgNaturalWidth * currentZoom;
+        const scaledHeight = svgNaturalHeight * currentZoom;
+        panX = (viewportWidth - scaledWidth) / 2 + 20;
+        panY = (viewportHeight - scaledHeight) / 2 + 60;
         updateTransform();
       });
       document.getElementById('fs-close').addEventListener('click', closeFullscreen);
@@ -3143,11 +3336,11 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
         fsContent.style.cursor = 'grab';
       });
 
-      // Zoom with mouse wheel
+      // Zoom with mouse wheel - use multiplicative factor
       fsContent.addEventListener('wheel', (e) => {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        zoom(delta);
+        const factor = e.deltaY > 0 ? 0.9 : 1.1;
+        zoomAt(factor, e.clientX, e.clientY);
       }, { passive: false });
 
       // ESC to close
