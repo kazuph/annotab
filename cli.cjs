@@ -2177,39 +2177,6 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     .fullscreen-content .mermaid svg {
       display: block;
     }
-    /* Minimap */
-    .minimap {
-      position: absolute;
-      top: 70px;
-      right: 20px;
-      width: 200px;
-      height: 150px;
-      background: var(--panel-alpha);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    .minimap-content {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 8px;
-    }
-    .minimap-content svg {
-      max-width: 100%;
-      max-height: 100%;
-      opacity: 0.6;
-    }
-    .minimap-viewport {
-      position: absolute;
-      border: 2px solid var(--accent);
-      background: rgba(102, 126, 234, 0.2);
-      pointer-events: none;
-      border-radius: 2px;
-    }
     /* Error toast */
     .mermaid-error-toast {
       position: fixed;
@@ -2362,10 +2329,6 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
     </div>
     <div class="fullscreen-content" id="fs-content">
       <div class="mermaid-wrapper" id="fs-wrapper"></div>
-    </div>
-    <div class="minimap" id="fs-minimap">
-      <div class="minimap-content" id="fs-minimap-content"></div>
-      <div class="minimap-viewport" id="fs-minimap-viewport"></div>
     </div>
   </div>
   <div class="mermaid-error-toast" id="mermaid-error-toast"></div>
@@ -3471,15 +3434,12 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       const fsWrapper = document.getElementById('fs-wrapper');
       const fsContent = document.getElementById('fs-content');
       const fsZoomInfo = document.getElementById('fs-zoom-info');
-      const minimapContent = document.getElementById('fs-minimap-content');
-      const minimapViewport = document.getElementById('fs-minimap-viewport');
       let currentZoom = 1;
       let initialZoom = 1;
       let panX = 0, panY = 0;
       let isPanning = false;
       let startX, startY;
       let svgNaturalWidth = 0, svgNaturalHeight = 0;
-      let minimapScale = 1;
 
       function openFullscreen(mermaidEl) {
         const svg = mermaidEl.querySelector('svg');
@@ -3487,11 +3447,6 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
         fsWrapper.innerHTML = '';
         const clonedSvg = svg.cloneNode(true);
         fsWrapper.appendChild(clonedSvg);
-
-        // Setup minimap
-        minimapContent.innerHTML = '';
-        const minimapSvg = svg.cloneNode(true);
-        minimapContent.appendChild(minimapSvg);
 
         // Get SVG's intrinsic/natural size from viewBox or attributes
         const viewBox = svg.getAttribute('viewBox');
@@ -3508,11 +3463,6 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
 
         svgNaturalWidth = naturalWidth;
         svgNaturalHeight = naturalHeight;
-
-        // Calculate minimap scale
-        const minimapMaxWidth = 184; // 200 - 16 padding
-        const minimapMaxHeight = 134; // 150 - 16 padding
-        minimapScale = Math.min(minimapMaxWidth / naturalWidth, minimapMaxHeight / naturalHeight);
 
         clonedSvg.style.width = naturalWidth + 'px';
         clonedSvg.style.height = naturalHeight + 'px';
@@ -3545,48 +3495,6 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
       function updateTransform() {
         fsWrapper.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + currentZoom + ')';
         fsZoomInfo.textContent = Math.round(currentZoom * 100) + '%';
-        updateMinimap();
-      }
-
-      function updateMinimap() {
-        if (!svgNaturalWidth || !svgNaturalHeight) return;
-
-        const viewportWidth = fsContent.clientWidth;
-        const viewportHeight = fsContent.clientHeight;
-
-        // Minimap dimensions
-        const mmWidth = 184;
-        const mmHeight = 134;
-        const mmPadding = 8;
-
-        // SVG size in minimap (centered)
-        const mmSvgWidth = svgNaturalWidth * minimapScale;
-        const mmSvgHeight = svgNaturalHeight * minimapScale;
-        const mmSvgLeft = (mmWidth - mmSvgWidth) / 2 + mmPadding;
-        const mmSvgTop = (mmHeight - mmSvgHeight) / 2 + mmPadding;
-
-        // Visible area in SVG coordinates (transform: translate(panX, panY) scale(currentZoom))
-        const visibleLeft = Math.max(0, -panX / currentZoom);
-        const visibleTop = Math.max(0, -panY / currentZoom);
-        const visibleWidth = viewportWidth / currentZoom;
-        const visibleHeight = viewportHeight / currentZoom;
-
-        // Position viewport indicator in minimap coordinates
-        const vpLeft = mmSvgLeft + visibleLeft * minimapScale;
-        const vpTop = mmSvgTop + visibleTop * minimapScale;
-        const vpWidth = Math.min(mmWidth - vpLeft + mmPadding, visibleWidth * minimapScale);
-        const vpHeight = Math.min(mmHeight - vpTop + mmPadding, visibleHeight * minimapScale);
-
-        // Clamp viewport inside minimap box
-        const clampedLeft = Math.max(mmPadding, Math.min(vpLeft, mmWidth - mmPadding));
-        const clampedTop = Math.max(mmPadding, Math.min(vpTop, mmHeight - mmPadding));
-        const clampedWidth = Math.min(vpWidth, mmWidth - clampedLeft - mmPadding);
-        const clampedHeight = Math.min(vpHeight, mmHeight - clampedTop - mmPadding);
-
-        minimapViewport.style.left = clampedLeft + 'px';
-        minimapViewport.style.top = clampedTop + 'px';
-        minimapViewport.style.width = Math.max(20, clampedWidth) + 'px';
-        minimapViewport.style.height = Math.max(15, clampedHeight) + 'px';
       }
 
       // Use multiplicative zoom for consistent behavior
