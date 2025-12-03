@@ -46,10 +46,10 @@ npx reviw <file>
 
 ```bash
 # Single file
-reviw <file> [--port 3000] [--encoding utf8|shift_jis|...]
+reviw <file> [--port 4989] [--encoding utf8|shift_jis|...]
 
 # Multiple files (each opens on consecutive ports)
-reviw file1.csv file2.md file3.tsv --port 3000
+reviw file1.csv file2.md file3.tsv --port 4989
 
 # Diff from stdin
 git diff HEAD | reviw
@@ -59,7 +59,7 @@ reviw changes.diff
 ```
 
 ### Options
-- `--port <number>`: Specify starting port (default: 3000)
+- `--port <number>`: Specify starting port (default: 4989)
 - `--encoding <encoding>`: Force specific encoding (auto-detected by default)
 - `--no-open`: Prevent automatic browser opening
 

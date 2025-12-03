@@ -3,7 +3,7 @@
  * Lightweight CSV/Text/Markdown viewer with comment collection server
  *
  * Usage:
- *   reviw <file...> [--port 3000] [--encoding utf8|shift_jis|...] [--no-open]
+ *   reviw <file...> [--port 4989] [--encoding utf8|shift_jis|...] [--no-open]
  *
  * Multiple files can be specified. Each file opens on a separate port.
  * Click cells in the browser to add comments.
@@ -11,20 +11,20 @@
  * When all files are closed, outputs combined YAML to stdout and exits.
  */
 
-const fs = require('fs');
-const http = require('http');
-const path = require('path');
-const { spawn } = require('child_process');
-const chardet = require('chardet');
-const iconv = require('iconv-lite');
-const marked = require('marked');
-const yaml = require('js-yaml');
+const fs = require("fs");
+const http = require("http");
+const path = require("path");
+const { spawn } = require("child_process");
+const chardet = require("chardet");
+const iconv = require("iconv-lite");
+const marked = require("marked");
+const yaml = require("js-yaml");
 
 // --- CLI arguments ---------------------------------------------------------
 const args = process.argv.slice(2);
 
 const filePaths = [];
-let basePort = 3000;
+let basePort = 4989;
 let encodingOpt = null;
 let noOpen = false;
 let stdinMode = false;
@@ -33,21 +33,21 @@ let stdinContent = null;
 
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
-  if (arg === '--port' && args[i + 1]) {
+  if (arg === "--port" && args[i + 1]) {
     basePort = Number(args[i + 1]);
     i += 1;
-  } else if ((arg === '--encoding' || arg === '-e') && args[i + 1]) {
+  } else if ((arg === "--encoding" || arg === "-e") && args[i + 1]) {
     encodingOpt = args[i + 1];
     i += 1;
-  } else if (arg === '--no-open') {
+  } else if (arg === "--no-open") {
     noOpen = true;
-  } else if (arg === '--help' || arg === '-h') {
+  } else if (arg === "--help" || arg === "-h") {
     console.log(`Usage: reviw <file...> [options]
        git diff | reviw [options]
        reviw [options]  (auto runs git diff HEAD)
 
 Options:
-  --port <number>     Server port (default: 3000)
+  --port <number>     Server port (default: 4989)
   --encoding <enc>    Force encoding (utf8, shift_jis, etc.)
   --no-open           Don't open browser automatically
   --help, -h          Show this help message
@@ -59,7 +59,7 @@ Examples:
   git diff HEAD~3 | reviw           # Review diff from last 3 commits
   reviw                             # Auto run git diff HEAD`);
     process.exit(0);
-  } else if (!arg.startsWith('-')) {
+  } else if (!arg.startsWith("-")) {
     filePaths.push(arg);
   }
 }
@@ -71,7 +71,7 @@ async function checkStdin() {
       resolve(false);
       return;
     }
-    let data = '';
+    let data = "";
     let resolved = false;
     const timeout = setTimeout(() => {
       if (!resolved) {
@@ -79,18 +79,18 @@ async function checkStdin() {
         resolve(data.length > 0 ? data : false);
       }
     }, 100);
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => {
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => {
       data += chunk;
     });
-    process.stdin.on('end', () => {
+    process.stdin.on("end", () => {
       clearTimeout(timeout);
       if (!resolved) {
         resolved = true;
         resolve(data.length > 0 ? data : false);
       }
     });
-    process.stdin.on('error', () => {
+    process.stdin.on("error", () => {
       clearTimeout(timeout);
       if (!resolved) {
         resolved = true;
@@ -103,15 +103,15 @@ async function checkStdin() {
 // Run git diff HEAD if no files and no stdin
 function runGitDiff() {
   return new Promise((resolve, reject) => {
-    const { execSync } = require('child_process');
+    const { execSync } = require("child_process");
     try {
       // Check if we're in a git repo
-      execSync('git rev-parse --is-inside-work-tree', { stdio: 'pipe' });
+      execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" });
       // Run git diff HEAD
-      const diff = execSync('git diff HEAD', { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
+      const diff = execSync("git diff HEAD", { encoding: "utf8", maxBuffer: 50 * 1024 * 1024 });
       resolve(diff);
     } catch (err) {
-      reject(new Error('Not a git repository or git command failed'));
+      reject(new Error("Not a git repository or git command failed"));
     }
   });
 }
@@ -130,7 +130,7 @@ for (const fp of filePaths) {
 // --- Diff parsing -----------------------------------------------------------
 function parseDiff(diffText) {
   const files = [];
-  const lines = diffText.split('\n');
+  const lines = diffText.split("\n");
   let currentFile = null;
   let lineNumber = 0;
 
@@ -138,16 +138,16 @@ function parseDiff(diffText) {
     const line = lines[i];
 
     // New file header
-    if (line.startsWith('diff --git')) {
+    if (line.startsWith("diff --git")) {
       if (currentFile) files.push(currentFile);
       const match = line.match(/diff --git a\/(.+?) b\/(.+)/);
       currentFile = {
-        oldPath: match ? match[1] : '',
-        newPath: match ? match[2] : '',
+        oldPath: match ? match[1] : "",
+        newPath: match ? match[2] : "",
         hunks: [],
         isNew: false,
         isDeleted: false,
-        isBinary: false
+        isBinary: false,
       };
       lineNumber = 0;
       continue;
@@ -156,47 +156,47 @@ function parseDiff(diffText) {
     if (!currentFile) continue;
 
     // File mode info
-    if (line.startsWith('new file mode')) {
+    if (line.startsWith("new file mode")) {
       currentFile.isNew = true;
       continue;
     }
-    if (line.startsWith('deleted file mode')) {
+    if (line.startsWith("deleted file mode")) {
       currentFile.isDeleted = true;
       continue;
     }
-    if (line.startsWith('Binary files')) {
+    if (line.startsWith("Binary files")) {
       currentFile.isBinary = true;
       continue;
     }
 
     // Hunk header
-    if (line.startsWith('@@')) {
+    if (line.startsWith("@@")) {
       const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/);
       if (match) {
         currentFile.hunks.push({
           oldStart: parseInt(match[1], 10),
           newStart: parseInt(match[2], 10),
-          context: match[3] || '',
-          lines: []
+          context: match[3] || "",
+          lines: [],
         });
       }
       continue;
     }
 
     // Skip other headers
-    if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('index ')) {
+    if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("index ")) {
       continue;
     }
 
     // Diff content
     if (currentFile.hunks.length > 0) {
       const hunk = currentFile.hunks[currentFile.hunks.length - 1];
-      if (line.startsWith('+')) {
-        hunk.lines.push({ type: 'add', content: line.slice(1), lineNum: ++lineNumber });
-      } else if (line.startsWith('-')) {
-        hunk.lines.push({ type: 'del', content: line.slice(1), lineNum: ++lineNumber });
-      } else if (line.startsWith(' ') || line === '') {
-        hunk.lines.push({ type: 'ctx', content: line.slice(1) || '', lineNum: ++lineNumber });
+      if (line.startsWith("+")) {
+        hunk.lines.push({ type: "add", content: line.slice(1), lineNum: ++lineNumber });
+      } else if (line.startsWith("-")) {
+        hunk.lines.push({ type: "del", content: line.slice(1), lineNum: ++lineNumber });
+      } else if (line.startsWith(" ") || line === "") {
+        hunk.lines.push({ type: "ctx", content: line.slice(1) || "", lineNum: ++lineNumber });
       }
     }
   }
@@ -235,18 +235,18 @@ function loadDiff(diffText) {
   sortedFiles.forEach((file, fileIdx) => {
     // File header row
     let label = file.newPath || file.oldPath;
-    if (file.isNew) label += ' (new)';
-    if (file.isDeleted) label += ' (deleted)';
-    if (file.isBinary) label += ' (binary)';
+    if (file.isNew) label += " (new)";
+    if (file.isDeleted) label += " (deleted)";
+    if (file.isBinary) label += " (binary)";
     rows.push({
-      type: 'file',
+      type: "file",
       content: label,
       filePath: file.newPath || file.oldPath,
       fileIndex: fileIdx,
       lineCount: file.lineCount,
       collapsed: file.collapsed,
       isBinary: file.isBinary,
-      rowIndex: rowIndex++
+      rowIndex: rowIndex++,
     });
 
     if (file.isBinary) return;
@@ -254,10 +254,10 @@ function loadDiff(diffText) {
     file.hunks.forEach((hunk) => {
       // Hunk header
       rows.push({
-        type: 'hunk',
+        type: "hunk",
         content: `@@ -${hunk.oldStart} +${hunk.newStart} @@${hunk.context}`,
         fileIndex: fileIdx,
-        rowIndex: rowIndex++
+        rowIndex: rowIndex++,
       });
 
       hunk.lines.forEach((line) => {
@@ -265,7 +265,7 @@ function loadDiff(diffText) {
           type: line.type,
           content: line.content,
           fileIndex: fileIdx,
-          rowIndex: rowIndex++
+          rowIndex: rowIndex++,
         });
       });
     });
@@ -274,8 +274,8 @@ function loadDiff(diffText) {
   return {
     rows,
     files: sortedFiles,
-    title: 'Git Diff',
-    mode: 'diff'
+    title: "Git Diff",
+    mode: "diff",
   };
 }
 
@@ -285,10 +285,10 @@ let serversRunning = 0;
 let nextPort = basePort;
 
 // --- Simple CSV/TSV parser (RFC4180-style, handles " escaping and newlines) ----
-function parseCsv(text, separator = ',') {
+function parseCsv(text, separator = ",") {
   const rows = [];
   let row = [];
-  let field = '';
+  let field = "";
   let inQuotes = false;
 
   for (let i = 0; i < text.length; i += 1) {
@@ -309,13 +309,13 @@ function parseCsv(text, separator = ',') {
       inQuotes = true;
     } else if (ch === separator) {
       row.push(field);
-      field = '';
-    } else if (ch === '\n') {
+      field = "";
+    } else if (ch === "\n") {
       row.push(field);
       rows.push(row);
       row = [];
-      field = '';
-    } else if (ch === '\r') {
+      field = "";
+    } else if (ch === "\r") {
       // Ignore CR (for CRLF handling)
     } else {
       field += ch;
@@ -327,7 +327,7 @@ function parseCsv(text, separator = ',') {
 
   // Remove trailing empty row if present
   const last = rows[rows.length - 1];
-  if (last && last.every((v) => v === '')) {
+  if (last && last.every((v) => v === "")) {
     rows.pop();
   }
 
@@ -335,15 +335,15 @@ function parseCsv(text, separator = ',') {
 }
 
 const ENCODING_MAP = {
-  'utf-8': 'utf8',
-  utf8: 'utf8',
-  'shift_jis': 'shift_jis',
-  sjis: 'shift_jis',
-  'windows-31j': 'cp932',
-  cp932: 'cp932',
-  'euc-jp': 'euc-jp',
-  'iso-8859-1': 'latin1',
-  latin1: 'latin1'
+  "utf-8": "utf8",
+  utf8: "utf8",
+  shift_jis: "shift_jis",
+  sjis: "shift_jis",
+  "windows-31j": "cp932",
+  cp932: "cp932",
+  "euc-jp": "euc-jp",
+  "iso-8859-1": "latin1",
+  latin1: "latin1",
 };
 
 function normalizeEncoding(name) {
@@ -356,9 +356,9 @@ function decodeBuffer(buf) {
   const specified = normalizeEncoding(encodingOpt);
   let encoding = specified;
   if (!encoding) {
-    const detected = chardet.detect(buf) || '';
-    encoding = normalizeEncoding(detected) || 'utf8';
-    if (encoding !== 'utf8') {
+    const detected = chardet.detect(buf) || "";
+    encoding = normalizeEncoding(detected) || "utf8";
+    if (encoding !== "utf8") {
       console.log(`Detected encoding: ${detected} -> ${encoding}`);
     }
   }
@@ -366,7 +366,7 @@ function decodeBuffer(buf) {
     return iconv.decode(buf, encoding);
   } catch (err) {
     console.warn(`Decode failed (${encoding}): ${err.message}, falling back to utf8`);
-    return buf.toString('utf8');
+    return buf.toString("utf8");
   }
 }
 
@@ -374,8 +374,8 @@ function loadCsv(filePath) {
   const raw = fs.readFileSync(filePath);
   const csvText = decodeBuffer(raw);
   const ext = path.extname(filePath).toLowerCase();
-  const separator = ext === '.tsv' ? '\t' : ',';
-  if (!csvText.includes('\n') && !csvText.includes(separator)) {
+  const separator = ext === ".tsv" ? "\t" : ",";
+  if (!csvText.includes("\n") && !csvText.includes(separator)) {
     // heuristic: if no newline/separators, still treat as single row
   }
   const rows = parseCsv(csvText, separator);
@@ -383,7 +383,7 @@ function loadCsv(filePath) {
   return {
     rows,
     cols: Math.max(1, maxCols),
-    title: path.basename(filePath)
+    title: path.basename(filePath),
   };
 }
 
@@ -395,7 +395,7 @@ function loadText(filePath) {
     rows: lines.map((line) => [line]),
     cols: 1,
     title: path.basename(filePath),
-    preview: null
+    preview: null,
   };
 }
 
@@ -405,13 +405,13 @@ function loadMarkdown(filePath) {
   const lines = text.split(/\r?\n/);
 
   // Parse YAML frontmatter
-  let frontmatterHtml = '';
+  let frontmatterHtml = "";
   let contentStart = 0;
 
-  if (lines[0] && lines[0].trim() === '---') {
+  if (lines[0] && lines[0].trim() === "---") {
     let frontmatterEnd = -1;
     for (let i = 1; i < lines.length; i++) {
-      if (lines[i].trim() === '---') {
+      if (lines[i].trim() === "---") {
         frontmatterEnd = i;
         break;
       }
@@ -419,32 +419,35 @@ function loadMarkdown(filePath) {
 
     if (frontmatterEnd > 0) {
       const frontmatterLines = lines.slice(1, frontmatterEnd);
-      const frontmatterText = frontmatterLines.join('\n');
+      const frontmatterText = frontmatterLines.join("\n");
 
       try {
         const frontmatter = yaml.load(frontmatterText);
-        if (frontmatter && typeof frontmatter === 'object') {
+        if (frontmatter && typeof frontmatter === "object") {
           // Create HTML table for frontmatter
           frontmatterHtml = '<div class="frontmatter-table"><table>';
           frontmatterHtml += '<colgroup><col style="width:12%"><col style="width:88%"></colgroup>';
           frontmatterHtml += '<thead><tr><th colspan="2">Document Metadata</th></tr></thead>';
-          frontmatterHtml += '<tbody>';
+          frontmatterHtml += "<tbody>";
 
           function renderValue(val) {
             if (Array.isArray(val)) {
-              return val.map(v => '<span class="fm-tag">' + escapeHtmlChars(String(v)) + '</span>').join(' ');
+              return val
+                .map((v) => '<span class="fm-tag">' + escapeHtmlChars(String(v)) + "</span>")
+                .join(" ");
             }
-            if (typeof val === 'object' && val !== null) {
-              return '<pre>' + escapeHtmlChars(JSON.stringify(val, null, 2)) + '</pre>';
+            if (typeof val === "object" && val !== null) {
+              return "<pre>" + escapeHtmlChars(JSON.stringify(val, null, 2)) + "</pre>";
             }
             return escapeHtmlChars(String(val));
           }
 
           for (const [key, val] of Object.entries(frontmatter)) {
-            frontmatterHtml += '<tr><th>' + escapeHtmlChars(key) + '</th><td>' + renderValue(val) + '</td></tr>';
+            frontmatterHtml +=
+              "<tr><th>" + escapeHtmlChars(key) + "</th><td>" + renderValue(val) + "</td></tr>";
           }
 
-          frontmatterHtml += '</tbody></table></div>';
+          frontmatterHtml += "</tbody></table></div>";
           contentStart = frontmatterEnd + 1;
         }
       } catch (e) {
@@ -454,43 +457,43 @@ function loadMarkdown(filePath) {
   }
 
   // Parse markdown content (without frontmatter)
-  const contentText = lines.slice(contentStart).join('\n');
+  const contentText = lines.slice(contentStart).join("\n");
   const preview = frontmatterHtml + marked.parse(contentText, { breaks: true });
 
   return {
     rows: lines.map((line) => [line]),
     cols: 1,
     title: path.basename(filePath),
-    preview
+    preview,
   };
 }
 
 function escapeHtmlChars(str) {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function loadData(filePath) {
   const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.csv' || ext === '.tsv') {
+  if (ext === ".csv" || ext === ".tsv") {
     const data = loadCsv(filePath);
-    return { ...data, mode: 'csv' };
+    return { ...data, mode: "csv" };
   }
-  if (ext === '.md' || ext === '.markdown') {
+  if (ext === ".md" || ext === ".markdown") {
     const data = loadMarkdown(filePath);
-    return { ...data, mode: 'markdown' };
+    return { ...data, mode: "markdown" };
   }
-  if (ext === '.diff' || ext === '.patch') {
-    const content = fs.readFileSync(filePath, 'utf8');
+  if (ext === ".diff" || ext === ".patch") {
+    const content = fs.readFileSync(filePath, "utf8");
     const data = loadDiff(content);
-    return { ...data, mode: 'diff' };
+    return { ...data, mode: "diff" };
   }
   // default text
   const data = loadText(filePath);
-  return { ...data, mode: 'text' };
+  return { ...data, mode: "text" };
 }
 
 // --- Safe JSON serialization for inline scripts ---------------------------
@@ -498,18 +501,18 @@ function loadData(filePath) {
 // the original values intact once parsed by JS.
 function serializeForScript(value) {
   return JSON.stringify(value)
-    .replace(/</g, '\\u003c')   // avoid closing the script tag
-    .replace(/>/g, '\\u003e')
-    .replace(/\u2028/g, '\\u2028') // line separator
-    .replace(/\u2029/g, '\\u2029') // paragraph separator
-    .replace(/`/g, '\\`')         // keep template literal boundaries safe
-    .replace(/\$\{/g, '\\${');
+    .replace(/</g, "\\u003c") // avoid closing the script tag
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028") // line separator
+    .replace(/\u2029/g, "\\u2029") // paragraph separator
+    .replace(/`/g, "\\`") // keep template literal boundaries safe
+    .replace(/\$\{/g, "\\${");
 }
 
 function diffHtmlTemplate(diffData) {
   const { rows, title } = diffData;
   const serialized = serializeForScript(rows);
-  const fileCount = rows.filter(r => r.type === 'file').length;
+  const fileCount = rows.filter((r) => r.type === "file").length;
 
   return `<!doctype html>
 <html lang="ja">
@@ -886,7 +889,7 @@ function diffHtmlTemplate(diffData) {
   <header>
     <div class="meta">
       <h1>${title}</h1>
-      <span class="badge">${fileCount} file${fileCount !== 1 ? 's' : ''} changed</span>
+      <span class="badge">${fileCount} file${fileCount !== 1 ? "s" : ""} changed</span>
       <span class="pill">Comments <strong id="comment-count">0</strong></span>
     </div>
     <div class="actions">
@@ -2218,8 +2221,9 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
   </header>
 
   <div class="wrap">
-    ${hasPreview && mode === 'markdown'
-      ? `<div class="md-layout">
+    ${
+      hasPreview && mode === "markdown"
+        ? `<div class="md-layout">
           <div class="md-left">
             <div class="md-preview">${previewHtml}</div>
           </div>
@@ -2230,7 +2234,12 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
                 <thead>
                   <tr>
                     <th aria-label="row/col corner"></th>
-                    ${Array.from({ length: cols }).map((_, i) => `<th data-col="${i + 1}"><div class="th-inner">${mode === 'csv' ? `C${i + 1}` : 'Text'}<span class="resizer" data-col="${i + 1}"></span></div></th>`).join('')}
+                    ${Array.from({ length: cols })
+                      .map(
+                        (_, i) =>
+                          `<th data-col="${i + 1}"><div class="th-inner">${mode === "csv" ? `C${i + 1}` : "Text"}<span class="resizer" data-col="${i + 1}"></span></div></th>`,
+                      )
+                      .join("")}
                   </tr>
                 </thead>
                 <tbody id="tbody"></tbody>
@@ -2238,8 +2247,8 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
             </div>
           </div>
         </div>`
-      : `
-        ${hasPreview ? `<div class="md-preview">${previewHtml}</div>` : ''}
+        : `
+        ${hasPreview ? `<div class="md-preview">${previewHtml}</div>` : ""}
         <div class="toolbar">
           <button id="fit-width">Fit to width</button>
           <span>Drag header edge to resize columns</span>
@@ -2250,13 +2259,19 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
             <thead>
               <tr>
                 <th aria-label="row/col corner"></th>
-                ${Array.from({ length: cols }).map((_, i) => `<th data-col="${i + 1}"><div class="th-inner">${mode === 'csv' ? `C${i + 1}` : 'Text'}<span class="resizer" data-col="${i + 1}"></span></div></th>`).join('')}
+                ${Array.from({ length: cols })
+                  .map(
+                    (_, i) =>
+                      `<th data-col="${i + 1}"><div class="th-inner">${mode === "csv" ? `C${i + 1}` : "Text"}<span class="resizer" data-col="${i + 1}"></span></div></th>`,
+                  )
+                  .join("")}
               </tr>
             </thead>
             <tbody id="tbody"></tbody>
           </table>
         </div>
-      `}
+      `
+    }
   </div>
 
   <div class="floating" id="comment-card">
@@ -3642,7 +3657,7 @@ function htmlTemplate(dataRows, cols, title, mode, previewHtml) {
 
 function buildHtml(filePath) {
   const data = loadData(filePath);
-  if (data.mode === 'diff') {
+  if (data.mode === "diff") {
     return diffHtmlTemplate(data);
   }
   const { rows, cols, title, mode, preview } = data;
@@ -3652,16 +3667,16 @@ function buildHtml(filePath) {
 // --- HTTP Server -----------------------------------------------------------
 function readBody(req) {
   return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', (chunk) => {
+    let data = "";
+    req.on("data", (chunk) => {
       data += chunk;
       if (data.length > 2 * 1024 * 1024) {
-        reject(new Error('payload too large'));
+        reject(new Error("payload too large"));
         req.destroy();
       }
     });
-    req.on('end', () => resolve(data));
-    req.on('error', reject);
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
   });
 }
 
@@ -3669,7 +3684,7 @@ const MAX_PORT_ATTEMPTS = 100;
 const activeServers = new Map();
 
 function outputAllResults() {
-  console.log('=== All comments received ===');
+  console.log("=== All comments received ===");
   if (allResults.length === 1) {
     const yamlOut = yaml.dump(allResults[0], { noRefs: true, lineWidth: 120 });
     console.log(yamlOut.trim());
@@ -3691,15 +3706,19 @@ function shutdownAll() {
   for (const ctx of activeServers.values()) {
     if (ctx.watcher) ctx.watcher.close();
     if (ctx.heartbeat) clearInterval(ctx.heartbeat);
-    ctx.sseClients.forEach((res) => { try { res.end(); } catch (_) {} });
+    ctx.sseClients.forEach((res) => {
+      try {
+        res.end();
+      } catch (_) {}
+    });
     if (ctx.server) ctx.server.close();
   }
   outputAllResults();
   setTimeout(() => process.exit(0), 500).unref();
 }
 
-process.on('SIGINT', shutdownAll);
-process.on('SIGTERM', shutdownAll);
+process.on("SIGINT", shutdownAll);
+process.on("SIGTERM", shutdownAll);
 
 function createFileServer(filePath) {
   return new Promise((resolve) => {
@@ -3716,19 +3735,21 @@ function createFileServer(filePath) {
       reloadTimer: null,
       server: null,
       opened: false,
-      port: 0
+      port: 0,
     };
 
     function broadcast(data) {
-      const payload = typeof data === 'string' ? data : JSON.stringify(data);
+      const payload = typeof data === "string" ? data : JSON.stringify(data);
       ctx.sseClients.forEach((res) => {
-        try { res.write(`data: ${payload}\n\n`); } catch (_) {}
+        try {
+          res.write(`data: ${payload}\n\n`);
+        } catch (_) {}
       });
     }
 
     function notifyReload() {
       clearTimeout(ctx.reloadTimer);
-      ctx.reloadTimer = setTimeout(() => broadcast('reload'), 150);
+      ctx.reloadTimer = setTimeout(() => broadcast("reload"), 150);
     }
 
     function startWatcher() {
@@ -3737,7 +3758,7 @@ function createFileServer(filePath) {
       } catch (err) {
         console.warn(`Failed to start file watcher for ${baseName}:`, err);
       }
-      ctx.heartbeat = setInterval(() => broadcast('ping'), 25000);
+      ctx.heartbeat = setInterval(() => broadcast("ping"), 25000);
     }
 
     function shutdownServer(result) {
@@ -3749,7 +3770,11 @@ function createFileServer(filePath) {
         clearInterval(ctx.heartbeat);
         ctx.heartbeat = null;
       }
-      ctx.sseClients.forEach((res) => { try { res.end(); } catch (_) {} });
+      ctx.sseClients.forEach((res) => {
+        try {
+          res.end();
+        } catch (_) {}
+      });
       if (ctx.server) {
         ctx.server.close();
         ctx.server = null;
@@ -3762,95 +3787,95 @@ function createFileServer(filePath) {
     }
 
     ctx.server = http.createServer(async (req, res) => {
-      if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
+      if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
         try {
           const html = buildHtml(filePath);
           res.writeHead(200, {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-store, no-cache, must-revalidate',
-            Pragma: 'no-cache',
-            Expires: '0'
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
           });
           res.end(html);
         } catch (err) {
-          console.error('File load error', err);
-          res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-          res.end('Failed to load file. Please check the file.');
+          console.error("File load error", err);
+          res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("Failed to load file. Please check the file.");
         }
         return;
       }
 
-      if (req.method === 'GET' && req.url === '/healthz') {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('ok');
+      if (req.method === "GET" && req.url === "/healthz") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
         return;
       }
 
-      if (req.method === 'POST' && req.url === '/exit') {
+      if (req.method === "POST" && req.url === "/exit") {
         try {
           const raw = await readBody(req);
           let payload = {};
           if (raw && raw.trim()) {
             payload = JSON.parse(raw);
           }
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          res.end('bye');
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("bye");
           shutdownServer(payload);
         } catch (err) {
-          console.error('payload parse error', err);
-          res.writeHead(400, { 'Content-Type': 'text/plain' });
-          res.end('bad request');
+          console.error("payload parse error", err);
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("bad request");
           shutdownServer(null);
         }
         return;
       }
 
-      if (req.method === 'GET' && req.url === '/sse') {
+      if (req.method === "GET" && req.url === "/sse") {
         res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'X-Accel-Buffering': 'no'
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
         });
-        res.write('retry: 3000\n\n');
+        res.write("retry: 3000\n\n");
         ctx.sseClients.add(res);
-        req.on('close', () => ctx.sseClients.delete(res));
+        req.on("close", () => ctx.sseClients.delete(res));
         return;
       }
 
       // Static file serving for images and other assets
-      if (req.method === 'GET') {
+      if (req.method === "GET") {
         const MIME_TYPES = {
-          '.png': 'image/png',
-          '.jpg': 'image/jpeg',
-          '.jpeg': 'image/jpeg',
-          '.gif': 'image/gif',
-          '.webp': 'image/webp',
-          '.svg': 'image/svg+xml',
-          '.ico': 'image/x-icon',
-          '.css': 'text/css',
-          '.js': 'application/javascript',
-          '.json': 'application/json',
-          '.pdf': 'application/pdf',
+          ".png": "image/png",
+          ".jpg": "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".gif": "image/gif",
+          ".webp": "image/webp",
+          ".svg": "image/svg+xml",
+          ".ico": "image/x-icon",
+          ".css": "text/css",
+          ".js": "application/javascript",
+          ".json": "application/json",
+          ".pdf": "application/pdf",
         };
         try {
-          const urlPath = decodeURIComponent(req.url.split('?')[0]);
-          if (urlPath.includes('..')) {
-            res.writeHead(403, { 'Content-Type': 'text/plain' });
-            res.end('forbidden');
+          const urlPath = decodeURIComponent(req.url.split("?")[0]);
+          if (urlPath.includes("..")) {
+            res.writeHead(403, { "Content-Type": "text/plain" });
+            res.end("forbidden");
             return;
           }
           const staticPath = path.join(baseDir, urlPath);
           if (!staticPath.startsWith(baseDir)) {
-            res.writeHead(403, { 'Content-Type': 'text/plain' });
-            res.end('forbidden');
+            res.writeHead(403, { "Content-Type": "text/plain" });
+            res.end("forbidden");
             return;
           }
           if (fs.existsSync(staticPath) && fs.statSync(staticPath).isFile()) {
             const ext = path.extname(staticPath).toLowerCase();
-            const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+            const contentType = MIME_TYPES[ext] || "application/octet-stream";
             const content = fs.readFileSync(staticPath);
-            res.writeHead(200, { 'Content-Type': contentType });
+            res.writeHead(200, { "Content-Type": contentType });
             res.end(content);
             return;
           }
@@ -3859,20 +3884,22 @@ function createFileServer(filePath) {
         }
       }
 
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('not found');
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("not found");
     });
 
     function tryListen(attemptPort, attempts = 0) {
       if (attempts >= MAX_PORT_ATTEMPTS) {
-        console.error(`Could not find an available port for ${baseName} after ${MAX_PORT_ATTEMPTS} attempts.`);
+        console.error(
+          `Could not find an available port for ${baseName} after ${MAX_PORT_ATTEMPTS} attempts.`,
+        );
         serversRunning--;
         checkAllDone();
         return;
       }
 
-      ctx.server.once('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
+      ctx.server.once("error", (err) => {
+        if (err.code === "EADDRINUSE") {
           tryListen(attemptPort + 1, attempts + 1);
         } else {
           console.error(`Server error for ${baseName}:`, err);
@@ -3888,11 +3915,19 @@ function createFileServer(filePath) {
         console.log(`Viewer started: http://localhost:${attemptPort}  (file: ${baseName})`);
         if (!noOpen) {
           const url = `http://localhost:${attemptPort}`;
-          const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+          const opener =
+            process.platform === "darwin"
+              ? "open"
+              : process.platform === "win32"
+                ? "start"
+                : "xdg-open";
           try {
-            spawn(opener, [url], { stdio: 'ignore', detached: true });
+            spawn(opener, [url], { stdio: "ignore", detached: true });
           } catch (err) {
-            console.warn('Failed to open browser automatically. Please open this URL manually:', url);
+            console.warn(
+              "Failed to open browser automatically. Please open this URL manually:",
+              url,
+            );
           }
         }
         startWatcher();
@@ -3914,13 +3949,15 @@ function createDiffServer(diffContent) {
       sseClients: new Set(),
       heartbeat: null,
       server: null,
-      port: 0
+      port: 0,
     };
 
     function broadcast(data) {
-      const payload = typeof data === 'string' ? data : JSON.stringify(data);
+      const payload = typeof data === "string" ? data : JSON.stringify(data);
       ctx.sseClients.forEach((res) => {
-        try { res.write(`data: ${payload}\n\n`); } catch (_) {}
+        try {
+          res.write(`data: ${payload}\n\n`);
+        } catch (_) {}
       });
     }
 
@@ -3929,7 +3966,11 @@ function createDiffServer(diffContent) {
         clearInterval(ctx.heartbeat);
         ctx.heartbeat = null;
       }
-      ctx.sseClients.forEach((res) => { try { res.end(); } catch (_) {} });
+      ctx.sseClients.forEach((res) => {
+        try {
+          res.end();
+        } catch (_) {}
+      });
       if (ctx.server) {
         ctx.server.close();
         ctx.server = null;
@@ -3941,79 +3982,81 @@ function createDiffServer(diffContent) {
     }
 
     ctx.server = http.createServer(async (req, res) => {
-      if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
+      if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
         try {
           const html = diffHtmlTemplate(diffData);
           res.writeHead(200, {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-store, no-cache, must-revalidate',
-            Pragma: 'no-cache',
-            Expires: '0'
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
           });
           res.end(html);
         } catch (err) {
-          console.error('Diff render error', err);
-          res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-          res.end('Failed to render diff view.');
+          console.error("Diff render error", err);
+          res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("Failed to render diff view.");
         }
         return;
       }
 
-      if (req.method === 'GET' && req.url === '/healthz') {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('ok');
+      if (req.method === "GET" && req.url === "/healthz") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
         return;
       }
 
-      if (req.method === 'POST' && req.url === '/exit') {
+      if (req.method === "POST" && req.url === "/exit") {
         try {
           const raw = await readBody(req);
           let payload = {};
           if (raw && raw.trim()) {
             payload = JSON.parse(raw);
           }
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          res.end('bye');
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("bye");
           shutdownServer(payload);
         } catch (err) {
-          console.error('payload parse error', err);
-          res.writeHead(400, { 'Content-Type': 'text/plain' });
-          res.end('bad request');
+          console.error("payload parse error", err);
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("bad request");
           shutdownServer(null);
         }
         return;
       }
 
-      if (req.method === 'GET' && req.url === '/sse') {
+      if (req.method === "GET" && req.url === "/sse") {
         res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'X-Accel-Buffering': 'no'
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
         });
-        res.write('retry: 3000\n\n');
+        res.write("retry: 3000\n\n");
         ctx.sseClients.add(res);
-        req.on('close', () => ctx.sseClients.delete(res));
+        req.on("close", () => ctx.sseClients.delete(res));
         return;
       }
 
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('not found');
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("not found");
     });
 
     function tryListen(attemptPort, attempts = 0) {
       if (attempts >= MAX_PORT_ATTEMPTS) {
-        console.error(`Could not find an available port for diff viewer after ${MAX_PORT_ATTEMPTS} attempts.`);
+        console.error(
+          `Could not find an available port for diff viewer after ${MAX_PORT_ATTEMPTS} attempts.`,
+        );
         serversRunning--;
         checkAllDone();
         return;
       }
 
-      ctx.server.once('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
+      ctx.server.once("error", (err) => {
+        if (err.code === "EADDRINUSE") {
           tryListen(attemptPort + 1, attempts + 1);
         } else {
-          console.error('Diff server error:', err);
+          console.error("Diff server error:", err);
           serversRunning--;
           checkAllDone();
         }
@@ -4021,15 +4064,23 @@ function createDiffServer(diffContent) {
 
       ctx.server.listen(attemptPort, () => {
         ctx.port = attemptPort;
-        ctx.heartbeat = setInterval(() => broadcast('ping'), 25000);
+        ctx.heartbeat = setInterval(() => broadcast("ping"), 25000);
         console.log(`Diff viewer started: http://localhost:${attemptPort}`);
         if (!noOpen) {
           const url = `http://localhost:${attemptPort}`;
-          const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+          const opener =
+            process.platform === "darwin"
+              ? "open"
+              : process.platform === "win32"
+                ? "start"
+                : "xdg-open";
           try {
-            spawn(opener, [url], { stdio: 'ignore', detached: true });
+            spawn(opener, [url], { stdio: "ignore", detached: true });
           } catch (err) {
-            console.warn('Failed to open browser automatically. Please open this URL manually:', url);
+            console.warn(
+              "Failed to open browser automatically. Please open this URL manually:",
+              url,
+            );
           }
         }
         resolve(ctx);
@@ -4051,17 +4102,21 @@ function createDiffServer(diffContent) {
     stdinContent = stdinData;
 
     // Check if it looks like a diff
-    if (stdinContent.startsWith('diff --git') || stdinContent.includes('\n+++ ') || stdinContent.includes('\n--- ')) {
+    if (
+      stdinContent.startsWith("diff --git") ||
+      stdinContent.includes("\n+++ ") ||
+      stdinContent.includes("\n--- ")
+    ) {
       diffMode = true;
-      console.log('Starting diff viewer from stdin...');
+      console.log("Starting diff viewer from stdin...");
       serversRunning = 1;
       await createDiffServer(stdinContent);
-      console.log('Close the browser tab or Submit & Exit to finish.');
+      console.log("Close the browser tab or Submit & Exit to finish.");
     } else {
       // Treat as plain text
-      console.log('Starting text viewer from stdin...');
+      console.log("Starting text viewer from stdin...");
       // For now, just show message - could enhance to support any text
-      console.error('Non-diff stdin content is not supported yet. Use a file instead.');
+      console.error("Non-diff stdin content is not supported yet. Use a file instead.");
       process.exit(1);
     }
   } else if (resolvedPaths.length > 0) {
@@ -4071,31 +4126,31 @@ function createDiffServer(diffContent) {
     for (const filePath of resolvedPaths) {
       await createFileServer(filePath);
     }
-    console.log('Close all browser tabs or Submit & Exit to finish.');
+    console.log("Close all browser tabs or Submit & Exit to finish.");
   } else {
     // No files and no stdin: try auto git diff
-    console.log('No files specified. Running git diff HEAD...');
+    console.log("No files specified. Running git diff HEAD...");
     try {
       const gitDiff = await runGitDiff();
-      if (gitDiff.trim() === '') {
-        console.log('No changes detected (working tree clean).');
-        console.log('');
-        console.log('Usage: reviw <file...> [options]');
-        console.log('       git diff | reviw [options]');
-        console.log('       reviw  (auto runs git diff HEAD)');
+      if (gitDiff.trim() === "") {
+        console.log("No changes detected (working tree clean).");
+        console.log("");
+        console.log("Usage: reviw <file...> [options]");
+        console.log("       git diff | reviw [options]");
+        console.log("       reviw  (auto runs git diff HEAD)");
         process.exit(0);
       }
       diffMode = true;
       stdinContent = gitDiff;
-      console.log('Starting diff viewer...');
+      console.log("Starting diff viewer...");
       serversRunning = 1;
       await createDiffServer(gitDiff);
-      console.log('Close the browser tab or Submit & Exit to finish.');
+      console.log("Close the browser tab or Submit & Exit to finish.");
     } catch (err) {
       console.error(err.message);
-      console.log('');
-      console.log('Usage: reviw <file...> [options]');
-      console.log('       git diff | reviw [options]');
+      console.log("");
+      console.log("Usage: reviw <file...> [options]");
+      console.log("       git diff | reviw [options]");
       process.exit(1);
     }
   }
